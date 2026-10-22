@@ -1,13 +1,13 @@
 import { getUrl, list } from 'aws-amplify/storage';
-import { PROJECT } from '../project';
+import type { Project } from '../project';
 import { collectPages, reportsFromItems, type Report } from './catalog';
 
-export async function discoverReports(signal?: AbortSignal): Promise<Report[]> {
+export async function discoverReports(project: Project, signal?: AbortSignal): Promise<Report[]> {
   const items = await collectPages((nextToken) => list({
-    path: PROJECT.prefix,
+    path: project.prefix,
     options: { pageSize: 1000, ...(nextToken ? { nextToken } : {}) },
   }), signal);
-  return reportsFromItems(items, PROJECT.prefix);
+  return reportsFromItems(items, project.prefix);
 }
 
 export async function readReport(path: string, signal: AbortSignal): Promise<string> {
