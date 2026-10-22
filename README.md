@@ -9,21 +9,25 @@ This is a separate app based on the login approach in [your upload portal](https
 1. Create a **private GitHub repository** named, for example, `metahopper-reports`. Unzip this project and commit its source at the repository root, including `package-lock.json`. Do not commit report HTML, pipeline data, credentials, `node_modules`, `dist`, or `amplify_outputs.json`.
 2. In AWS Amplify, choose **Create new app**, connect that repository, and select its production branch. Use the included `amplify.yml` and an Amplify service role with the standard permissions needed to deploy Gen 2 backends. The build selects Node.js 22 and npm 10.9.4 automatically. Deploy. This creates the login resources, private bucket, and hosted frontend. The initial deployment can take several minutes.
 3. From the deployed branch's backend outputs, record `auth.user_pool_id`, `storage.bucket_name`, and the AWS region. You can download `amplify_outputs.json` from Amplify or run `npx ampx generate outputs --app-id YOUR_APP_ID --branch main` with authorized AWS credentials. Use the **actual generated bucket name**, not its friendly label `metahopperReports`.
-4. Open that user pool in Cognito. Create your own user, then your client's user, using email addresses and temporary passwords. Add each to the **`phoridae-viewers`** group. Users set a new password on first sign-in. Self-registration is disabled in Cognito as well as hidden in the UI. Users without this group cannot read reports. Cognito can send invitation emails when you create users; choose that deliberately in the console.
+4. Open that user pool in Cognito. Create your own user, then your client's user, using email addresses and temporary passwords. Add Phoridae clients to **`phoridae-viewers`** and Aphrophora clients to **`aphrophora-viewers`**. For your own account, use **`metahopper-admins`** to review both projects. Users set a new password on first sign-in. Self-registration is disabled in Cognito as well as hidden in the UI. Users without a supported group cannot read reports. Assign clients to one project group only; sign out and back in after membership changes. Cognito can send invitation emails when you create users; choose that deliberately in the console.
 5. Publish a report using the instructions below. Open the Amplify HTTPS URL, sign in, and verify the report and controls. Share that URL with the invited client once the access checks below pass.
 
 The sign-in page is reachable on the web; report contents and sample listings require authorized login. S3 public access is blocked and unauthenticated identity access is disabled. No S3 website endpoint is needed. Client credentials are temporary, read-only credentials scoped to the project prefix. Do not add public bucket policies or a `guest`/`authenticated` read rule.
 
 ## Publish from TheBelly
 
-The default project settings live in `project.ts`:
+Project access is defined in `project.ts`, shared by Cognito, S3 permissions, and the dashboard:
 
-| Setting | Value |
-| --- | --- |
-| Display name | Phoridae |
-| Reader group | `phoridae-viewers` |
-| S3 report prefix | `reports/phoridae/` |
-| Poll interval | 30 seconds while the dashboard is visible |
+| Client project | Reader group | S3 report prefix |
+| --- | --- | --- |
+| Phoridae | `phoridae-viewers` | `reports/phoridae/` |
+| Aphrophora | `aphrophora-viewers` | `reports/aphrophora/` |
+
+A client account opens its assigned project automatically. The optional **`metahopper-admins`** group has read-only access to both projects and gets a project selector. Only assign that group to trusted staff. Despite its name it cannot upload, delete, or manage users.
+
+Cognito uses one group IAM role, not a union of all group permissions. The staff group has highest precedence. Give a client only its own project group; adding both client groups is not a substitute for the staff group. The UI follows the same role precedence. Backend IAM remains the security boundary, even if someone modifies browser code.
+
+Changing projects clears the previous project's report frames and cancels pending requests. If any report has manual bin assignments, switching asks for confirmation so you can cancel and export first. Polling remains every 30 seconds while visible.
 
 Each completed report has this S3 key:
 
@@ -32,24 +36,30 @@ reports/phoridae/SPH1014/metahopper_report.html
 reports/phoridae/SPH1870/metahopper_report.html
 ```
 
-Install AWS CLI v2 on TheBelly and configure an authorized profile, for example `mab-reports`. The supplied `scripts/belly-iam-policy.json` is an IAM identity-policy template for its publishing principal. Replace both bucket placeholders. It permits listing this prefix and writing reports, with no read or delete permission. Use your normal AWS credential setup; never place AWS access keys in GitHub or frontend variables.
+Use your existing AWS CLI credentials on TheBelly. A named `--profile` is optional; it is unrelated to dashboard client accounts. The supplied `scripts/belly-iam-policy.json` is an IAM identity-policy template for its publishing principal. Replace every bucket placeholder. It permits listing the two report prefixes and writing reports, with no read or delete permission. This publishing policy is for TheBelly, never client accounts; narrow it if a publisher should handle only one project. Use your normal AWS credential setup; never place AWS access keys in GitHub or frontend variables.
 
-Copy `scripts/publish_reports.py` to TheBelly. It finds only immediate sample folders, stages just their report HTML files, then uses S3 sync to upload new or locally newer/size-changed files. It does not upload FASTQ, FASTA, bins, or other outputs, and does not delete remote reports.
+Update your checkout on TheBelly with `git pull --ff-only`. The helper now **requires `--prefix`**: it never guesses a destination from local folder names. It finds only immediate sample folders, stages just their report HTML files, then uses S3 sync to upload new or locally newer/size-changed files. It does not upload FASTQ, FASTA, bins, or other outputs, and does not delete remote reports.
 
 ```bash
 python3 scripts/publish_reports.py \
   --source "$HOME/Jagiellonian/Phoridae" \
   --bucket YOUR_GENERATED_BUCKET_NAME \
-  --profile mab-reports \
+  --prefix reports/phoridae/ \
   --dry-run
 ```
 
-Remove `--dry-run` to publish. Run after each pipeline batch completes. If a rerun deliberately preserves an old file modification time and file size, `aws s3 sync` may skip it; touch the completed HTML before publishing or use `aws s3 cp` for that report.
+For Aphrophora, use the same bucket with a different explicit prefix:
+
+```bash
+PYTHONNOUSERSITE=1 python3 "$HOME/bin/metahopper-live/scripts/publish_reports.py" --source "$HOME/Jagiellonian/Aphrophora/Aphrophora_reports" --bucket YOUR_GENERATED_BUCKET_NAME --prefix reports/aphrophora/ --dry-run
+```
+
+`PYTHONNOUSERSITE=1` is a workaround for the conflicting user-installed Python packages on TheBelly; it does not change AWS credentials. Omit it on systems that do not need it. Remove `--dry-run` to publish. Run after each pipeline batch completes. If a rerun deliberately preserves an old file modification time and file size, `aws s3 sync` may skip it; touch the completed HTML before publishing or use `aws s3 cp` for that report.
 
 For one completed sample, this command is enough:
 
 ```bash
-aws --profile mab-reports s3 cp \
+aws s3 cp \
   SPH1014/metahopper_report.html \
   s3://YOUR_GENERATED_BUCKET_NAME/reports/phoridae/SPH1014/metahopper_report.html \
   --content-type 'text/html; charset=utf-8' \
@@ -77,9 +87,9 @@ Manual bin assignments remain local to that open browser tab. They are not saved
 
 1. Sign in as a group member: list and open a report, change rank, and exercise the original report controls.
 2. In a separate signed-out browser, the dashboard must require sign-in. Opening a direct, unsigned S3 object URL must return Access Denied.
-3. Sign in as a test user outside `phoridae-viewers`: listing and reading must fail. Confirm Cognito self-registration is disabled.
+3. Sign in as a test user without any supported group: no reports should be requested, and direct S3 listing/reading must fail. Confirm Cognito self-registration is disabled.
 4. Upload a second sample while the viewer is open: a tab should appear after the next poll. Replace a selected report: the clean report should reload. With manual assignments present, replacement should wait for confirmation.
-5. Check the client role cannot upload/delete and cannot list/read another project prefix. The viewer UI having no upload button is not an authorization test; test the IAM-backed storage requests too.
+5. Sign in separately as Phoridae and Aphrophora clients and as staff. Check each client role cannot upload/delete and cannot list/read the other project prefix; staff must be able to list/read both. The viewer UI having no upload button is not an authorization test; test the IAM-backed storage requests too.
 
 These live checks require your AWS deployment. Local build and browser tests do not validate deployed IAM, Cognito email delivery, or S3 CORS. Amplify-managed storage supplies CORS configuration. If adapting to an existing bucket later, configure the actual Cognito group role's prefix-scoped IAM permissions and bucket CORS; changing only the frontend bucket name is insufficient.
 
@@ -106,9 +116,20 @@ Alternatively, `npx ampx sandbox` with authorized AWS credentials creates a sepa
 
 Reserve a separate prefix such as `outputs/phoridae/<sample>/...` in the same bucket. This keeps frequent HTML discovery away from a potentially large output tree. Full outputs are not exposed by the current access rule. Later, add explicit read permissions and a download browser for that prefix. No report data needs to be committed to GitHub.
 
-This version is for one client project. Other client projects need separate group-to-prefix authorization, not just a project dropdown. A separate app/backend is also a straightforward isolation choice.
+To add another client project, add its name, group, and distinct prefix in `project.ts` and redeploy the backend and frontend. Extend the publishing principal policy if needed. Uploads create sample tabs within a configured project; they do not automatically create new client permissions.
+
+## Upgrade an existing Phoridae deployment
+
+1. Merge the multiple-project change and let the existing Amplify app deploy. Keep the same storage resource name and app; the bucket is not intentionally replaced.
+2. Cognito will add `aphrophora-viewers` and `metahopper-admins`. Existing Phoridae memberships remain. Add the new client only to `aphrophora-viewers`. Add your own review account to `metahopper-admins`. Sign out and back in.
+3. Pull the updated repository on TheBelly. Include `--prefix reports/phoridae/` in existing Phoridae scripts/timers and `--prefix reports/aphrophora/` for Aphrophora.
+4. If reports were already uploaded to the wrong prefix, move only those misplaced report objects to the correct prefix. A new upload alone does not remove old copies. Until moved, anything under `reports/phoridae/` is accessible to Phoridae viewers. Previously downloaded copies cannot be recalled.
+5. Perform the AWS access checks above before handing the new client their login.
 
 ## Validation performed
+
+Multiple-project update (2026-10-22): production build, backend typecheck, seven unit tests, uploader destination checks, and browser tests for both clients, unassigned users, staff switching, edit confirmation, late-response isolation, and mobile layout passed. Run `node --import tsx tests/permissions.check.ts` for offline synthesis checks of client/staff storage policy scopes, role precedence, blocked public/guest access, and invitation-only signup. This creates local CDK output only; it does not contact AWS or deploy. Live IAM access still needs the per-account checks above.
+
 
 Validated on 2026-10-19 using Node.js 24, React 19, Amplify JS 6.22.2, Amplify UI 6.15.7, Amplify Backend 1.25.1, and Vite 6.4.4. The lockfile records exact dependencies.
 
