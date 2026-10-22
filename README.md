@@ -7,7 +7,7 @@ This is a separate app based on the login approach in [your upload portal](https
 ## Deploy once
 
 1. Create a **private GitHub repository** named, for example, `metahopper-reports`. Unzip this project and commit its source at the repository root, including `package-lock.json`. Do not commit report HTML, pipeline data, credentials, `node_modules`, `dist`, or `amplify_outputs.json`.
-2. In AWS Amplify, choose **Create new app**, connect that repository, and select its production branch. Use the included `amplify.yml`, Node.js 22 or 24, and an Amplify service role with the standard permissions needed to deploy Gen 2 backends. Deploy. This creates the login resources, private bucket, and hosted frontend. The initial deployment can take several minutes.
+2. In AWS Amplify, choose **Create new app**, connect that repository, and select its production branch. Use the included `amplify.yml` and an Amplify service role with the standard permissions needed to deploy Gen 2 backends. The build selects Node.js 22 and npm 10.9.4 automatically. Deploy. This creates the login resources, private bucket, and hosted frontend. The initial deployment can take several minutes.
 3. From the deployed branch's backend outputs, record `auth.user_pool_id`, `storage.bucket_name`, and the AWS region. You can download `amplify_outputs.json` from Amplify or run `npx ampx generate outputs --app-id YOUR_APP_ID --branch main` with authorized AWS credentials. Use the **actual generated bucket name**, not its friendly label `metahopperReports`.
 4. Open that user pool in Cognito. Create your own user, then your client's user, using email addresses and temporary passwords. Add each to the **`phoridae-viewers`** group. Users set a new password on first sign-in. Self-registration is disabled in Cognito as well as hidden in the UI. Users without this group cannot read reports. Cognito can send invitation emails when you create users; choose that deliberately in the console.
 5. Publish a report using the instructions below. Open the Amplify HTTPS URL, sign in, and verify the report and controls. Share that URL with the invited client once the access checks below pass.
@@ -85,15 +85,20 @@ These live checks require your AWS deployment. Local build and browser tests do 
 
 ## Local development
 
-Use Node.js 22 or 24. After downloading the real `amplify_outputs.json` from your deployed app:
+Use Node.js 22 and npm 10.9.4, matching the Amplify build. After downloading the real `amplify_outputs.json` from your deployed app:
 
 ```bash
+nvm install
+nvm use
+npm install --global npm@10.9.4
 npm ci
 npm test
 npm run typecheck:backend
 npm run build
 npm run dev
 ```
+
+After intentionally changing dependencies, run `npm install` with this npm version, commit both `package.json` and `package-lock.json`, and verify a fresh `npm ci` before pushing. Amplify uses `npm ci` and will reject an incomplete or inconsistent lockfile.
 
 Alternatively, `npx ampx sandbox` with authorized AWS credentials creates a separate development backend and generates that file. This provisions AWS resources and incurs normal AWS usage charges. Do not publish client reports to a development environment unintentionally.
 
