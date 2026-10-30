@@ -12,7 +12,8 @@ def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument('--source', type=pathlib.Path, required=True, help='Directory containing sample folders')
     parser.add_argument('--bucket', required=True, help='Actual Amplify-created S3 bucket name')
-    parser.add_argument('--prefix', default='reports/phoridae/')
+    parser.add_argument('--prefix', required=True,
+                        help='Destination project folder, e.g. reports/phoridae/ or reports/aphrophora/')
     parser.add_argument('--profile', help='AWS CLI profile configured on TheBelly')
     parser.add_argument('--dry-run', action='store_true')
     args = parser.parse_args()
@@ -23,7 +24,7 @@ def main():
     if not args.prefix or args.prefix.startswith('/') or '..' in args.prefix.split('/'):
         parser.error('--prefix must be a nonempty relative S3 prefix')
     if not shutil.which('aws'):
-        parser.error('Install AWS CLI v2 and configure a profile first')
+        parser.error('Install AWS CLI and configure AWS credentials first; a named profile is optional')
     reports = sorted(args.source.glob('*/metahopper_report.html'))
     if not reports:
         parser.error('No */metahopper_report.html files found')
@@ -46,7 +47,8 @@ def main():
                     '--content-type', 'text/html; charset=utf-8', '--cache-control', 'no-store', '--no-progress']
         if args.dry_run:
             command.append('--dryrun')
-        print(f'{len(reports)} completed reports selected. No remote objects will be deleted.', flush=True)
+        print(f'{len(reports)} completed reports selected for s3://{args.bucket}/{args.prefix.rstrip("/")}/', flush=True)
+        print('No remote objects will be deleted.', flush=True)
         subprocess.run(command, check=True)
 
 
