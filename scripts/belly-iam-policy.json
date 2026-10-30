@@ -12,7 +12,9 @@
             "reports/phoridae/",
             "reports/phoridae/*",
             "reports/aphrophora/",
-            "reports/aphrophora/*"
+            "reports/aphrophora/*",
+            "reports/sample-reports/",
+            "reports/sample-reports/*"
           ]
         }
       }
@@ -26,7 +28,8 @@
       ],
       "Resource": [
         "arn:aws:s3:::REPLACE_WITH_BUCKET_NAME/reports/phoridae/*",
-        "arn:aws:s3:::REPLACE_WITH_BUCKET_NAME/reports/aphrophora/*"
+        "arn:aws:s3:::REPLACE_WITH_BUCKET_NAME/reports/aphrophora/*",
+        "arn:aws:s3:::REPLACE_WITH_BUCKET_NAME/reports/sample-reports/*"
       ]
     }
   ]

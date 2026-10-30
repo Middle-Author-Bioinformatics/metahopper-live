@@ -8,6 +8,7 @@ export interface Project {
 export const PROJECTS: readonly Project[] = [
   { id: 'phoridae', name: 'Phoridae', group: 'phoridae-viewers', prefix: 'reports/phoridae/' },
   { id: 'aphrophora', name: 'Aphrophora', group: 'aphrophora-viewers', prefix: 'reports/aphrophora/' },
+  { id: 'sample-reports', name: 'Sample reports', group: 'sample-reports', prefix: 'reports/sample-reports/' },
 ];
 export const STAFF_GROUP = 'metahopper-admins';
 export const POLL_MS = 30_000;

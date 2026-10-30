@@ -15,8 +15,14 @@ const groups = resources.filter((resource) => resource.Type === 'AWS::Cognito::U
 assert.equal(groups.find((group) => group.Properties.GroupName === 'metahopper-admins')?.Properties.Precedence, 0);
 assert.equal(groups.find((group) => group.Properties.GroupName === 'phoridae-viewers')?.Properties.Precedence, 1);
 assert.equal(groups.find((group) => group.Properties.GroupName === 'aphrophora-viewers')?.Properties.Precedence, 2);
+assert.equal(groups.find((group) => group.Properties.GroupName === 'sample-reports')?.Properties.Precedence, 3);
 
-for (const name of ['phoridae-viewers', 'aphrophora-viewers', 'metahopper-admins']) {
+const projectPrefixes = {
+  'phoridae-viewers': 'reports/phoridae/',
+  'aphrophora-viewers': 'reports/aphrophora/',
+  'sample-reports': 'reports/sample-reports/',
+};
+for (const name of [...Object.keys(projectPrefixes), 'metahopper-admins']) {
   const roleId = groups.find((group) => group.Properties.GroupName === name)?.Properties.RoleArn['Fn::GetAtt'][0];
   assert.equal(typeof roleId, 'string');
   const role = backend.auth.resources.groups[name].role;
@@ -31,14 +37,9 @@ for (const name of ['phoridae-viewers', 'aphrophora-viewers', 'metahopper-admins
   assert.ok(s3.length, `Missing storage policies for ${name}`);
   assert.deepEqual([...new Set(s3.flatMap((s: any) => s.Action))].sort(), ['s3:GetObject', 's3:ListBucket']);
   const serialized = JSON.stringify(s3);
-  if (name === 'phoridae-viewers') {
-    assert.ok(serialized.includes('reports/phoridae/'));
-    assert.ok(!serialized.includes('reports/aphrophora/'));
-  } else if (name === 'aphrophora-viewers') {
-    assert.ok(serialized.includes('reports/aphrophora/'));
-    assert.ok(!serialized.includes('reports/phoridae/'));
-  } else {
-    assert.ok(serialized.includes('reports/phoridae/') && serialized.includes('reports/aphrophora/'));
+  for (const [group, prefix] of Object.entries(projectPrefixes)) {
+    assert.equal(serialized.includes(prefix), name === group || name === 'metahopper-admins',
+      `${name} has incorrect access to ${prefix}`);
   }
   assert.ok(!serialized.includes('s3:Put') && !serialized.includes('s3:Delete'));
   console.log(`PASS synthesized ${name} role has only its intended read permissions`);
