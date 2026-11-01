@@ -1,7 +1,9 @@
 import { defineStorage } from '@aws-amplify/backend';
-import { PROJECT } from '../../project';
+import { PROJECTS, STAFF_GROUP } from '../../project';
 export const storage = defineStorage({
   name: 'metahopperReports',
   isDefault: true,
-  access: (allow) => ({ [`${PROJECT.prefix}*`]: [allow.groups([PROJECT.group]).to(['read'])] }),
+  access: (allow) => Object.fromEntries(PROJECTS.map((project) => [
+    `${project.prefix}*`, [allow.groups([project.group, STAFF_GROUP]).to(['read'])],
+  ])),
 });
