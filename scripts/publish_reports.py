@@ -167,7 +167,6 @@ def _prepare_sample(report, stage, bucket, prefix, pipeline_dir, max_nodes=10000
 
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
-<<<<<<< HEAD
     parser.add_argument('--source', type=pathlib.Path, required=True, help='Directory containing sample run folders')
     parser.add_argument('--bucket', required=True)
     parser.add_argument('--prefix', required=True,
@@ -179,13 +178,6 @@ def main():
                         help='Maximum overlap links during missing MEGAHIT GFA export (default: 10000000)')
     parser.add_argument('--skip-refresh', action='store_true', help='Use already regenerated HTML and graph JSON')
     parser.add_argument('--profile')
-=======
-    parser.add_argument('--source', type=pathlib.Path, required=True, help='Directory containing sample folders')
-    parser.add_argument('--bucket', required=True, help='Actual Amplify-created S3 bucket name')
-    parser.add_argument('--prefix', required=True,
-                        help='Destination project folder, e.g. reports/phoridae/ or reports/aphrophora/')
-    parser.add_argument('--profile', help='AWS CLI profile configured on TheBelly')
->>>>>>> 1538d3470e4f7fa44a6cc3d37a5b5873d9445079
     parser.add_argument('--dry-run', action='store_true')
     args = parser.parse_args()
     if not args.source.is_dir():
@@ -198,11 +190,7 @@ def main():
     if args.graph_max_nodes < 1 or args.megahit_max_links < 1:
         parser.error('Graph node and link limits must be positive')
     if not shutil.which('aws'):
-<<<<<<< HEAD
         parser.error('AWS CLI v2 must be installed and configured')
-=======
-        parser.error('Install AWS CLI and configure AWS credentials first; a named profile is optional')
->>>>>>> 1538d3470e4f7fa44a6cc3d37a5b5873d9445079
     reports = sorted(args.source.glob('*/metahopper_report.html'))
     if args.sample:
         reports = [p for p in reports if p.parent.name in set(args.sample)]
@@ -216,7 +204,6 @@ def main():
         for report in reports:
             if not report.stat().st_size:
                 raise SystemExit(f'Empty report: {report}')
-<<<<<<< HEAD
             prepare_sample(report, stage, args.bucket, args.prefix, args.pipeline_dir.resolve(), args.graph_max_nodes, args.skip_refresh, args.megahit_max_links)
         command = ['aws'] + (['--profile', args.profile] if args.profile else [])
         target = f's3://{args.bucket}/{args.prefix.rstrip("/")}/'
@@ -229,24 +216,6 @@ def main():
             if args.dry_run:
                 cmd.append('--dryrun')
             subprocess.run(cmd, check=True)
-=======
-            destination = stage / report.parent.name / report.name
-            destination.parent.mkdir()
-            shutil.copy2(report, destination)
-            after = report.stat()
-            if (before.st_size, before.st_mtime_ns) != (after.st_size, after.st_mtime_ns):
-                raise SystemExit(f'Report changed during copy; retry after pipeline finishes: {report}')
-        command = ['aws']
-        if args.profile:
-            command += ['--profile', args.profile]
-        command += ['s3', 'sync', str(stage), f's3://{args.bucket}/{args.prefix.rstrip("/")}/',
-                    '--content-type', 'text/html; charset=utf-8', '--cache-control', 'no-store', '--no-progress']
-        if args.dry_run:
-            command.append('--dryrun')
-        print(f'{len(reports)} completed reports selected for s3://{args.bucket}/{args.prefix.rstrip("/")}/', flush=True)
-        print('No remote objects will be deleted.', flush=True)
-        subprocess.run(command, check=True)
->>>>>>> 1538d3470e4f7fa44a6cc3d37a5b5873d9445079
 
 
 if __name__ == '__main__':

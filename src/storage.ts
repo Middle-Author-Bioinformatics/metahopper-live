@@ -1,9 +1,5 @@
 import { getUrl, list } from 'aws-amplify/storage';
-<<<<<<< HEAD
 import { PROJECTS, type Project } from '../project';
-=======
-import type { Project } from '../project';
->>>>>>> 1538d3470e4f7fa44a6cc3d37a5b5873d9445079
 import { collectPages, reportsFromItems, type Report } from './catalog';
 import { resolveAsset, verifyAsset, type AssetManifest } from './assets';
 
