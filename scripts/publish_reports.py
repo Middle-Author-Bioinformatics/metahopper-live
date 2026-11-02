@@ -12,7 +12,8 @@ import subprocess
 import sys
 import tempfile
 
-MAX_ASSET_BYTES = 512 * 1024 * 1024
+# This is the viewer's in-memory limit, not an upload or download size limit.
+MAX_BUFFERED_ASSET_BYTES = 512 * 1024 * 1024
 
 
 def embed_manifest(html, manifest):
@@ -33,8 +34,6 @@ def stage_asset(source, root, logical, assets, sample_prefix, compress=False):
     before = resolved.stat()
     if compress and not logical.endswith(('.gfa.gz', '.fastg.gz')):
         raise ValueError('Only source graph downloads can be gzip-compressed')
-    if before.st_size > MAX_ASSET_BYTES and not compress:
-        raise ValueError(f'Asset exceeds browser transfer limit (512 MB): {source}')
     digest = hashlib.sha256()
     with tempfile.NamedTemporaryFile(dir=assets, delete=False) as handle:
         temporary = pathlib.Path(handle.name)
@@ -49,9 +48,6 @@ def stage_asset(source, root, logical, assets, sample_prefix, compress=False):
         temporary.unlink()
         raise ValueError(f'Asset changed during publication; retry after the pipeline finishes: {source}')
     size = temporary.stat().st_size
-    if size > MAX_ASSET_BYTES:
-        temporary.unlink()
-        raise ValueError(f'Compressed graph still exceeds browser transfer limit (512 MB): {source}')
     if compress:
         with temporary.open('rb') as handle:
             for chunk in iter(lambda: handle.read(8 * 1024 * 1024), b''):
@@ -60,7 +56,12 @@ def stage_asset(source, root, logical, assets, sample_prefix, compress=False):
     destination = assets / checksum / logical
     destination.parent.mkdir(parents=True, exist_ok=True)
     temporary.replace(destination)
-    return dict(key=sample_prefix + 'assets/' + checksum + '/' + logical, sha256=checksum, size=size)
+    entry = dict(key=sample_prefix + 'assets/' + checksum + '/' + logical, sha256=checksum, size=size)
+    if size > MAX_BUFFERED_ASSET_BYTES:
+        # The authenticated parent viewer starts a native browser download. It
+        # never buffers this file or transfers it into the report iframe.
+        entry['downloadOnly'] = True
+    return entry
 
 
 @contextlib.contextmanager
@@ -173,11 +174,14 @@ def _prepare_sample(report, stage, bucket, prefix, pipeline_dir, max_nodes=40000
     manifest = dict(schema='metahopper-assets-1', sample=sample, bucket=bucket, prefix=sample_prefix,
                     fasta=fasta.relative_to(root).as_posix(), files={})
     for logical, source in sorted(sources.items()):
-        compress = logical.endswith(('.gfa', '.fastg')) and source.stat().st_size > MAX_ASSET_BYTES
+        compress = logical.endswith(('.gfa', '.fastg')) and source.stat().st_size > MAX_BUFFERED_ASSET_BYTES
         published_logical = '_compressed/' + logical + '.gz' if compress else logical
         manifest['files'][published_logical] = stage_asset(source, root, published_logical, assets, sample_prefix, compress=compress)
         if compress:
             print(f'{sample}: full source graph compressed for download: {logical} -> {published_logical}', flush=True)
+        if manifest['files'][published_logical].get('downloadOnly'):
+            size = manifest['files'][published_logical]['size']
+            print(f'{sample}: direct browser download ({size / (1024 * 1024):,.1f} MiB): {published_logical}', flush=True)
     (destination / report.name).write_text(embed_manifest(html, manifest))
     (destination / 'asset_manifest.json').write_text(json.dumps(manifest, indent=2) + '\n')
     counts = graph_data.get('counts', {})
