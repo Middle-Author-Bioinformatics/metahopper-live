@@ -2,6 +2,7 @@
 """Publish sample reports and immutable graph/FASTA assets to private project S3."""
 import argparse
 import contextlib
+import gzip
 import hashlib
 import json
 import pathlib
@@ -10,6 +11,8 @@ import shutil
 import subprocess
 import sys
 import tempfile
+
+MAX_ASSET_BYTES = 512 * 1024 * 1024
 
 
 def embed_manifest(html, manifest):
@@ -21,31 +24,43 @@ def embed_manifest(html, manifest):
     return re.sub(r'</head>', lambda _: tag + '</head>', html, count=1, flags=re.I)
 
 
-def stage_asset(source, root, logical, assets, sample_prefix):
+def stage_asset(source, root, logical, assets, sample_prefix, compress=False):
     resolved = source.resolve(strict=True)
     if not resolved.is_relative_to(root.resolve()):
         raise ValueError(f'Asset points outside this run: {source}')
     if any(part in ('', '.', '..') for part in logical.split('/')) or re.search(r'[\\%?#\x00-\x1f]', logical):
         raise ValueError(f'Invalid asset path: {logical}')
     before = resolved.stat()
-    if before.st_size > 512 * 1024 * 1024:
+    if compress and not logical.endswith(('.gfa.gz', '.fastg.gz')):
+        raise ValueError('Only source graph downloads can be gzip-compressed')
+    if before.st_size > MAX_ASSET_BYTES and not compress:
         raise ValueError(f'Asset exceeds browser transfer limit (512 MB): {source}')
     digest = hashlib.sha256()
     with tempfile.NamedTemporaryFile(dir=assets, delete=False) as handle:
         temporary = pathlib.Path(handle.name)
-        with resolved.open('rb') as inp:
+        stream = gzip.GzipFile(filename='', mode='wb', fileobj=handle, compresslevel=1, mtime=0) if compress else contextlib.nullcontext(handle)
+        with stream as output, resolved.open('rb') as inp:
             for chunk in iter(lambda: inp.read(8 * 1024 * 1024), b''):
-                digest.update(chunk)
-                handle.write(chunk)
+                if not compress:
+                    digest.update(chunk)
+                output.write(chunk)
     after = resolved.stat()
     if (before.st_size, before.st_mtime_ns) != (after.st_size, after.st_mtime_ns):
         temporary.unlink()
         raise ValueError(f'Asset changed during publication; retry after the pipeline finishes: {source}')
+    size = temporary.stat().st_size
+    if size > MAX_ASSET_BYTES:
+        temporary.unlink()
+        raise ValueError(f'Compressed graph still exceeds browser transfer limit (512 MB): {source}')
+    if compress:
+        with temporary.open('rb') as handle:
+            for chunk in iter(lambda: handle.read(8 * 1024 * 1024), b''):
+                digest.update(chunk)
     checksum = digest.hexdigest()
     destination = assets / checksum / logical
     destination.parent.mkdir(parents=True, exist_ok=True)
     temporary.replace(destination)
-    return dict(key=sample_prefix + 'assets/' + checksum + '/' + logical, sha256=checksum, size=before.st_size)
+    return dict(key=sample_prefix + 'assets/' + checksum + '/' + logical, sha256=checksum, size=size)
 
 
 @contextlib.contextmanager
@@ -66,12 +81,12 @@ def idle_sample(root):
             fcntl.flock(handle, fcntl.LOCK_UN)
 
 
-def prepare_sample(report, stage, bucket, prefix, pipeline_dir, max_nodes=1000000, skip_refresh=False, max_links=10000000):
+def prepare_sample(report, stage, bucket, prefix, pipeline_dir, max_nodes=4000000, skip_refresh=False, max_links=10000000):
     with idle_sample(report.parent.resolve()):
         return _prepare_sample(report, stage, bucket, prefix, pipeline_dir, max_nodes, skip_refresh, max_links)
 
 
-def _prepare_sample(report, stage, bucket, prefix, pipeline_dir, max_nodes=1000000, skip_refresh=False, max_links=10000000):
+def _prepare_sample(report, stage, bucket, prefix, pipeline_dir, max_nodes=4000000, skip_refresh=False, max_links=10000000):
     root = report.parent.resolve()
     sample = report.parent.name
     sample_prefix = prefix.rstrip('/') + '/' + sample + '/'
@@ -86,6 +101,8 @@ def _prepare_sample(report, stage, bucket, prefix, pipeline_dir, max_nodes=10000
         graph_command = [sys.executable, str(graph_script), '-i', str(root), '--max-nodes', str(max_nodes)]
         if (root / 'megahit/final.contigs.fa').is_file() and not (root / 'megahit/assembly.gfa').is_file():
             graph_command += ['--export-megahit-graph', '--megahit-max-links', str(max_links)]
+        elif (root / 'megahit/assembly.gfa').is_file():
+            print(f'{sample}: using existing MEGAHIT GFA; refreshing the display catalogue (source limit {max_nodes:,} segments)', flush=True)
         subprocess.run(graph_command, check=True)
         subprocess.run([sys.executable, str(report_script), '-i', str(root), '-o', str(destination / report.name),
                         '--graph-max-nodes', str(max_nodes)], check=True)
@@ -156,7 +173,11 @@ def _prepare_sample(report, stage, bucket, prefix, pipeline_dir, max_nodes=10000
     manifest = dict(schema='metahopper-assets-1', sample=sample, bucket=bucket, prefix=sample_prefix,
                     fasta=fasta.relative_to(root).as_posix(), files={})
     for logical, source in sorted(sources.items()):
-        manifest['files'][logical] = stage_asset(source, root, logical, assets, sample_prefix)
+        compress = logical.endswith(('.gfa', '.fastg')) and source.stat().st_size > MAX_ASSET_BYTES
+        published_logical = '_compressed/' + logical + '.gz' if compress else logical
+        manifest['files'][published_logical] = stage_asset(source, root, published_logical, assets, sample_prefix, compress=compress)
+        if compress:
+            print(f'{sample}: full source graph compressed for download: {logical} -> {published_logical}', flush=True)
     (destination / report.name).write_text(embed_manifest(html, manifest))
     (destination / 'asset_manifest.json').write_text(json.dumps(manifest, indent=2) + '\n')
     counts = graph_data.get('counts', {})
@@ -173,7 +194,8 @@ def main():
                         help='Project folder, e.g. reports/aphrophora/ or reports/sample-reports/')
     parser.add_argument('--sample', action='append', help='Publish only this sample folder; may be repeated')
     parser.add_argument('--pipeline-dir', type=pathlib.Path, default=pathlib.Path(__file__).resolve().parents[2] / 'MetaHopper')
-    parser.add_argument('--graph-max-nodes', type=int, default=1000000)
+    parser.add_argument('--graph-max-nodes', type=int, default=4000000,
+                        help='Maximum segments per input GFA; large display catalogues retain complete two-link neighbourhoods')
     parser.add_argument('--megahit-max-links', type=int, default=10000000,
                         help='Maximum overlap links during missing MEGAHIT GFA export (default: 10000000)')
     parser.add_argument('--skip-refresh', action='store_true', help='Use already regenerated HTML and graph JSON')

@@ -1,6 +1,7 @@
 import importlib.util
 import csv
 import hashlib
+import gzip
 import json
 import os
 import subprocess
@@ -139,6 +140,32 @@ class PublishTests(unittest.TestCase):
     def test_graph_node_limit_does_not_silently_publish_without_the_original_graph(self):
         with self.assertRaisesRegex(ValueError,'Increase --graph-max-nodes'):
             publish.prepare_sample(self.report,self.stage,'sample-bucket','reports/aphrophora/',PIPELINE,max_nodes=1)
+
+    def test_large_source_gfa_is_gzip_published_without_altering_the_saved_graph(self):
+        source=self.root/'megahit/assembly.gfa'
+        original=('S\tk3_1\t'+'A'*997+'CGT\nS\tk3_2\tCGTTAA\nL\tk3_1\t+\tk3_2\t+\t3M\n#'+'A'*20000+'\n').encode()
+        write(source,original.decode());before=source.stat()
+        with patch.object(publish,'MAX_ASSET_BYTES',8192):
+            output=publish.prepare_sample(self.report,self.stage,'sample-bucket','reports/aphrophora/',PIPELINE)
+        manifest=json.loads((output/'asset_manifest.json').read_text())
+        logical='_compressed/megahit/assembly.gfa.gz'
+        self.assertIn(logical,manifest['files']);self.assertNotIn('megahit/assembly.gfa',manifest['files'])
+        entry=manifest['files'][logical];compressed=output/'assets'/entry['sha256']/logical
+        self.assertEqual(gzip.decompress(compressed.read_bytes()),original)
+        self.assertEqual(entry['size'],compressed.stat().st_size)
+        self.assertEqual(entry['sha256'],hashlib.sha256(compressed.read_bytes()).hexdigest())
+        self.assertEqual(source.read_bytes(),original)
+        self.assertEqual(source.stat().st_mtime_ns,before.st_mtime_ns)
+
+    def test_gzip_asset_keys_are_deterministic_and_remaining_transfer_limit_is_enforced(self):
+        source=write(self.root/'large.gfa','S\t1\t'+'A'*20000+'\n')
+        with patch.object(publish,'MAX_ASSET_BYTES',8192):
+            a=publish.stage_asset(source,self.root,'_compressed/large.gfa.gz',self.stage,'reports/aphrophora/Sample/',compress=True)
+            b=publish.stage_asset(source,self.root,'_compressed/large.gfa.gz',self.stage,'reports/aphrophora/Sample/',compress=True)
+            self.assertEqual(a,b)
+            source.write_bytes(os.urandom(20000))
+            with self.assertRaisesRegex(ValueError,'Compressed graph still exceeds'):
+                publish.stage_asset(source,self.root,'_compressed/large.gfa.gz',self.stage,'reports/aphrophora/Sample/',compress=True)
 
 
 if __name__=='__main__':unittest.main()
