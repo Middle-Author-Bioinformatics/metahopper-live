@@ -1,7 +1,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import vm from 'node:vm';
-import { assetManifest, resolveAsset, verifyAsset, type AssetManifest } from '../src/assets.ts';
+import { assetManifest, MAX_BUFFERED_ASSET_BYTES, resolveAsset, startAssetDownload, verifyAsset, type AssetManifest } from '../src/assets.ts';
 import { isolatedReport } from '../src/frame.ts';
 
 const report = 'reports/phoridae/Sample/metahopper_report.html';
@@ -52,6 +52,38 @@ test('downloaded bytes must match the report hash and size', async () => {
   await assert.rejects(verifyAsset(buffer,{key:'unused',sha256:sha,size:5}),/size/);
 });
 
+test('large published assets resolve for direct download while buffering stays bounded', () => {
+  const large = structuredClone(manifest);
+  large.files[path].size = MAX_BUFFERED_ASSET_BYTES + 1;
+  large.files[path].downloadOnly = true;
+  assert.equal(resolveAsset(large, report, path, 'download').size, MAX_BUFFERED_ASSET_BYTES + 1);
+  assert.throws(() => resolveAsset(large, report, path), /direct download/);
+  delete large.files[path].downloadOnly;
+  assert.throws(() => resolveAsset(large, report, path), /direct download/);
+  large.files[path].size = 4;large.files[path].downloadOnly = true;
+  assert.throws(() => resolveAsset(large, report, path), /direct download/);
+  assert.equal(resolveAsset(large, report, path, 'download').size, 4);
+  assert.throws(() => resolveAsset(large, 'reports/aphrophora/Sample/metahopper_report.html', path, 'download'));
+  large.files[path].key = 'reports/phoridae/Other/private.fasta';
+  assert.throws(() => resolveAsset(large, report, path, 'download'));
+});
+
+test('native downloads use a parent link without fetching, buffering, or creating a Blob', () => {
+  const events: string[]=[];
+  const anchor={href:'',download:'',rel:'',referrerPolicy:'',click:()=>events.push('click'),remove:()=>events.push('remove')};
+  const doc={createElement:(tag:string)=>{assert.equal(tag,'a');return anchor;},body:{appendChild:(value:unknown)=>{assert.equal(value,anchor);events.push('append');}}};
+  const previous=Object.getOwnPropertyDescriptor(globalThis,'document');
+  Object.defineProperty(globalThis,'document',{value:doc,configurable:true});
+  try {
+    startAssetDownload(new URL('https://example.invalid/immutable/assembly.gfa.gz?signature=private'), '_compressed/megahit/assembly.gfa.gz');
+    assert.deepEqual(events,['append','click','remove']);
+    assert.equal(anchor.download,'assembly.gfa.gz');assert.equal(anchor.rel,'noreferrer');assert.equal(anchor.referrerPolicy,'no-referrer');
+    assert.throws(()=>startAssetDownload(new URL('javascript:alert(1)'),path),/secure/);
+  } finally {
+    if (previous) Object.defineProperty(globalThis,'document',previous); else Reflect.deleteProperty(globalThis,'document');
+  }
+});
+
 test('the iframe bridge accepts responses only from its parent and its own channel', async () => {
   const output=isolatedReport('<html><head></head><body></body></html>','asset-channel');
   const code=output.match(/<script>([\s\S]*?)<\/script>/)![1];
@@ -70,4 +102,26 @@ test('the iframe bridge accepts responses only from its parent and its own chann
   await Promise.resolve();assert.equal(resolved,false);
   listeners.message({source:parent,data:{channel:'asset-channel',type:'asset-response',id,buffer}});
   assert.equal(await pending,buffer);
+});
+
+test('large graph clicks request a native parent download without returning a signed URL or bytes', async () => {
+  const code=isolatedReport('<html><head></head><body></body></html>','download-channel').match(/<script>([\s\S]*?)<\/script>/)![1];
+  const messages: Array<Record<string,unknown>>=[];
+  const listeners: Record<string,(event:any)=>void>={};
+  const parent={postMessage:(message:Record<string,unknown>)=>messages.push(message)};
+  const logical='_compressed/megahit/assembly.gfa.gz';
+  const anchor={getAttribute:(key:string)=>key==='data-sample-asset'?logical:null};
+  const child: Record<string,unknown>={};
+  const document={getElementById:(id:string)=>id==='metahopper-assets'?{textContent:JSON.stringify({files:{[logical]:{size:MAX_BUFFERED_ASSET_BYTES+1,downloadOnly:true}}})}:null,
+    addEventListener:(name:string,callback:(event:any)=>void)=>{listeners[name]=callback;}};
+  vm.runInNewContext(code,{window:child,parent,document,ArrayBuffer,
+    addEventListener:(name:string,callback:(event:any)=>void)=>{listeners[name]=callback;},
+    setTimeout:()=>1,clearTimeout:()=>{},alert:(error:string)=>assert.fail(error),
+    Blob:()=>assert.fail('Large download must not create a Blob'),URL:{createObjectURL:()=>assert.fail('Large download must not be buffered')}});
+  listeners.DOMContentLoaded({});let prevented=false;
+  const click=listeners.click({target:{closest:()=>anchor},preventDefault:()=>{prevented=true;}});
+  assert.equal(prevented,true);assert.equal(messages.length,1);assert.equal(messages[0].type,'asset-download');assert.equal(messages[0].path,logical);
+  listeners.message({source:parent,data:{channel:'download-channel',type:'asset-response',id:messages[0].id,downloadStarted:true}});
+  await click;
+  assert.equal(messages[0].url,undefined);assert.equal(messages[0].buffer,undefined);
 });

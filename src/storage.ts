@@ -1,7 +1,7 @@
 import { getUrl, list } from 'aws-amplify/storage';
 import { PROJECTS, type Project } from '../project';
 import { collectPages, reportsFromItems, type Report } from './catalog';
-import { resolveAsset, verifyAsset, type AssetManifest } from './assets';
+import { resolveAsset, startAssetDownload, verifyAsset, type AssetManifest } from './assets';
 
 export async function discoverReports(project: Project, signal?: AbortSignal): Promise<Report[]> {
   const items = await collectPages((nextToken) => list({
@@ -34,5 +34,18 @@ export async function readReportAsset(reportPath: string, manifest: AssetManifes
   await verifyAsset(buffer, entry);
   signal.throwIfAborted();
   return buffer;
+}
+
+export async function downloadReportAsset(reportPath: string, manifest: AssetManifest | null, logical: string, signal: AbortSignal): Promise<void> {
+  if (!PROJECTS.some((project) => reportPath.startsWith(project.prefix))) throw new Error('Report is outside configured projects');
+  const entry = resolveAsset(manifest, reportPath, logical, 'download');
+  signal.throwIfAborted();
+  const { url } = await getUrl({ path: entry.key, options: {
+    expiresIn: 3600, validateObjectExistence: true,
+    contentDisposition: { type: 'attachment', filename: logical.split('/').pop() ?? 'sample-asset' },
+    contentType: 'application/octet-stream',
+  } });
+  signal.throwIfAborted();
+  startAssetDownload(url, logical);
 }
 

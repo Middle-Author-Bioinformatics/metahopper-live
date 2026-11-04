@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from 'react';
 import type { Report } from './catalog';
 import { isolatedReport } from './frame';
-import { readReport, readReportAsset } from './storage';
+import { downloadReportAsset, readReport, readReportAsset } from './storage';
 import { assetManifest, type AssetManifest } from './assets';
 
 interface Props {
@@ -27,13 +27,20 @@ export default function ReportFrame({ report, active, removed, onEdited }: Props
         setEdited(event.data.value);
         onEdited(report.path, event.data.value);
       }
-      if (event.data.type === 'asset-request' && typeof event.data.id === 'string' && /^[a-zA-Z0-9-]{1,80}$/.test(event.data.id)
+      if ((event.data.type === 'asset-request' || event.data.type === 'asset-download') && typeof event.data.id === 'string' && /^[a-zA-Z0-9-]{1,80}$/.test(event.data.id)
           && typeof event.data.path === 'string' && requests.size < 4 && !requests.has(event.data.id)) {
         const id = event.data.id, target = frame.current?.contentWindow;
         if (!target) return;
         const controller = new AbortController(); requests.set(id, controller);
-        void readReportAsset(report.path, loaded?.manifest ?? null, event.data.path, controller.signal).then((buffer) => {
-          if (!controller.signal.aborted && target === frame.current?.contentWindow) target.postMessage({ channel: channel.current, type: 'asset-response', id, buffer }, '*', [buffer]);
+        const download = event.data.type === 'asset-download';
+        const task = download
+          ? downloadReportAsset(report.path, loaded?.manifest ?? null, event.data.path, controller.signal)
+          : readReportAsset(report.path, loaded?.manifest ?? null, event.data.path, controller.signal);
+        void task.then((buffer) => {
+          if (!controller.signal.aborted && target === frame.current?.contentWindow) {
+            if (download) target.postMessage({ channel: channel.current, type: 'asset-response', id, downloadStarted: true }, '*');
+            else if (buffer instanceof ArrayBuffer) target.postMessage({ channel: channel.current, type: 'asset-response', id, buffer }, '*', [buffer]);
+          }
         }).catch((error: unknown) => {
           if (!controller.signal.aborted && target === frame.current?.contentWindow) target.postMessage({ channel: channel.current, type: 'asset-response', id, error: error instanceof Error ? error.message : 'Asset request failed' }, '*');
         }).finally(() => requests.delete(id));

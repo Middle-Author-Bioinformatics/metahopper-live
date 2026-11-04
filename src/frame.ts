@@ -8,18 +8,21 @@ export function isolatedReport(html: string, channel: string): string {
   (() => {
     const channel = ${safeChannel};
     const pending = new Map(); let serial = 0;
-    window.metahopperLoadAsset = path => new Promise((resolve, reject) => {
+    const requestAsset = (path, download) => new Promise((resolve, reject) => {
       const id = 'asset-' + (++serial);
       const timer = setTimeout(() => { pending.delete(id); reject(Error('Sample asset request timed out')); }, 180000);
-      pending.set(id, {resolve, reject, timer});
-      parent.postMessage({channel, type:'asset-request', id, path}, '*');
+      pending.set(id, {resolve, reject, timer, download});
+      parent.postMessage({channel, type:download ? 'asset-download' : 'asset-request', id, path}, '*');
     });
+    window.metahopperLoadAsset = path => requestAsset(path, false);
+    window.metahopperDownloadAsset = path => requestAsset(path, true);
     addEventListener('message', event => {
       if (event.source === parent && event.data?.channel === channel && event.data.type === 'asset-response') {
         const request = pending.get(event.data.id); if (!request) return;
         pending.delete(event.data.id); clearTimeout(request.timer);
         if (event.data.error) request.reject(Error(event.data.error));
-        else if (event.data.buffer instanceof ArrayBuffer) request.resolve(event.data.buffer);
+        else if (request.download && event.data.downloadStarted === true) request.resolve();
+        else if (!request.download && event.data.buffer instanceof ArrayBuffer) request.resolve(event.data.buffer);
         else request.reject(Error('Invalid sample asset response'));
       }
       if (event.source === parent && event.data?.channel === channel && event.data.type === 'resize') {
@@ -38,6 +41,10 @@ export function isolatedReport(html: string, channel: string): string {
         if (!files?.[path]) return;
         event.preventDefault();
         try {
+          if (files[path].downloadOnly || files[path].size > 512 * 1024 * 1024) {
+            await window.metahopperDownloadAsset(path);
+            return;
+          }
           const buffer = await window.metahopperLoadAsset(path);
           const url = URL.createObjectURL(new Blob([buffer]));
           const download = document.createElement('a'); download.href=url; download.download=path.split('/').pop();
