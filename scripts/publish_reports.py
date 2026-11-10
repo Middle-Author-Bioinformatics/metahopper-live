@@ -64,6 +64,59 @@ def stage_asset(source, root, logical, assets, sample_prefix, compress=False):
     return entry
 
 
+def pathway_sources(html, root, stage):
+    """Only publish the exact sample-scoped files used by the embedded explorer."""
+    match = re.search(r'<script\b[^>]*\bid=["\']metahopper-pathways-data["\'][^>]*>([\s\S]*?)</script>', html, re.I)
+    if not match:
+        return {}, {}
+    data = json.loads(match[1])
+    if data.get('schema') != 'metahopper-pathways-1' or data.get('run_name') != root.name or data.get('stage') != stage:
+        raise ValueError('Pathway explorer belongs to a different sample or bin set')
+    if data.get('preview'):
+        raise ValueError('Pathway preview inputs are unverified; regenerate the report from this sample before publishing')
+    def relative(value):
+        path = pathlib.PurePosixPath(value)
+        if not value or path.is_absolute() or any(p in ('', '.', '..') for p in value.split('/')) or re.search(r'[\\%?#\x00-\x1f]', value):
+            raise ValueError('Invalid pathway asset path: ' + value)
+        source = root / path
+        if not source.resolve(strict=True).is_relative_to(root):
+            raise ValueError('Pathway asset points outside this sample')
+        return path, source
+    directory, folder = relative(data.get('directory', ''))
+    if (folder / '.pathwaygenie.lock').exists():
+        raise ValueError('PathwayGenie is still running; publish after it finishes')
+    lock = folder.parent / ('.' + folder.name + '.metahopper-pathways.lock')
+    if lock.is_file():
+        import fcntl
+        with lock.open() as handle:
+            try:
+                fcntl.flock(handle, fcntl.LOCK_SH | fcntl.LOCK_NB)
+            except BlockingIOError as exc:
+                raise ValueError('A pathway run/import is active; publish after it finishes') from exc
+            finally:
+                fcntl.flock(handle, fcntl.LOCK_UN)
+    for item in data.get('inputs', []):
+        _, source = relative(item['path'])
+        digest = hashlib.sha256()
+        with source.open('rb') as handle:
+            for block in iter(lambda: handle.read(1024 * 1024), b''):
+                digest.update(block)
+        if digest.hexdigest() != item.get('sha256'):
+            raise ValueError('Pathway input bin changed after report generation; regenerate the HTML before publishing')
+    sources, expected = {}, {}
+    for item in data.get('files', []):
+        path, source = relative(item['path'])
+        if not path.is_relative_to(directory) or source.is_dir():
+            raise ValueError('Pathway download is outside its declared results folder')
+        if not re.fullmatch(r'[0-9a-f]{64}', str(item.get('sha256', ''))) or not isinstance(item.get('size'), int):
+            raise ValueError('Invalid pathway asset checksum/size')
+        if item['path'] in sources:
+            raise ValueError('Duplicate pathway asset in the report')
+        sources[item['path']] = source
+        expected[item['path']] = dict(sha256=item['sha256'], size=item['size'])
+    return sources, expected
+
+
 @contextlib.contextmanager
 def idle_sample(root):
     lock = root / 'pipeline.lock'
@@ -82,12 +135,12 @@ def idle_sample(root):
             fcntl.flock(handle, fcntl.LOCK_UN)
 
 
-def prepare_sample(report, stage, bucket, prefix, pipeline_dir, max_nodes=4000000, skip_refresh=False, max_links=10000000):
+def prepare_sample(report, stage, bucket, prefix, pipeline_dir, max_nodes=4000000, skip_refresh=False, max_links=10000000, pathways_rank='genus', pathways_dir=None):
     with idle_sample(report.parent.resolve()):
-        return _prepare_sample(report, stage, bucket, prefix, pipeline_dir, max_nodes, skip_refresh, max_links)
+        return _prepare_sample(report, stage, bucket, prefix, pipeline_dir, max_nodes, skip_refresh, max_links, pathways_rank, pathways_dir)
 
 
-def _prepare_sample(report, stage, bucket, prefix, pipeline_dir, max_nodes=4000000, skip_refresh=False, max_links=10000000):
+def _prepare_sample(report, stage, bucket, prefix, pipeline_dir, max_nodes=4000000, skip_refresh=False, max_links=10000000, pathways_rank='genus', pathways_dir=None):
     root = report.parent.resolve()
     sample = report.parent.name
     sample_prefix = prefix.rstrip('/') + '/' + sample + '/'
@@ -105,8 +158,11 @@ def _prepare_sample(report, stage, bucket, prefix, pipeline_dir, max_nodes=40000
         elif (root / 'megahit/assembly.gfa').is_file():
             print(f'{sample}: using existing MEGAHIT GFA; refreshing the display catalogue (source limit {max_nodes:,} segments)', flush=True)
         subprocess.run(graph_command, check=True)
-        subprocess.run([sys.executable, str(report_script), '-i', str(root), '-o', str(destination / report.name),
-                        '--graph-max-nodes', str(max_nodes)], check=True)
+        report_command = [sys.executable, str(report_script), '-i', str(root), '-o', str(destination / report.name),
+                          '--graph-max-nodes', str(max_nodes), '--pathways-rank', pathways_rank]
+        if pathways_dir is not None:
+            report_command += ['--pathways-dir', str(pathways_dir)]
+        subprocess.run(report_command, check=True)
     else:
         shutil.copy2(report, destination / report.name)
     html = (destination / report.name).read_text()
@@ -171,12 +227,17 @@ def _prepare_sample(report, stage, bucket, prefix, pipeline_dir, max_nodes=40000
         for path in (record_path.parent / 'bakta').glob('annotation.*'):
             if path.suffix in ('.faa', '.ffn', '.fna', '.gff3', '.gbff', '.json', '.tsv', '.embl', '.txt'):
                 sources[path.relative_to(root).as_posix()] = path
+    pathway_files, pathway_expected = pathway_sources(html, root, stage_name)
+    sources.update(pathway_files)
     manifest = dict(schema='metahopper-assets-1', sample=sample, bucket=bucket, prefix=sample_prefix,
                     fasta=fasta.relative_to(root).as_posix(), files={})
     for logical, source in sorted(sources.items()):
         compress = logical.endswith(('.gfa', '.fastg')) and source.stat().st_size > MAX_BUFFERED_ASSET_BYTES
         published_logical = '_compressed/' + logical + '.gz' if compress else logical
         manifest['files'][published_logical] = stage_asset(source, root, published_logical, assets, sample_prefix, compress=compress)
+        expected = pathway_expected.get(logical)
+        if expected and any(manifest['files'][published_logical][key] != value for key, value in expected.items()):
+            raise ValueError('Pathway outputs changed after report generation: ' + logical + '. Regenerate before publishing; no files were uploaded.')
         if compress:
             print(f'{sample}: full source graph compressed for download: {logical} -> {published_logical}', flush=True)
         if manifest['files'][published_logical].get('downloadOnly'):
@@ -203,6 +264,8 @@ def main():
     parser.add_argument('--megahit-max-links', type=int, default=10000000,
                         help='Maximum overlap links during missing MEGAHIT GFA export (default: 10000000)')
     parser.add_argument('--skip-refresh', action='store_true', help='Use already regenerated HTML and graph JSON')
+    parser.add_argument('--pathways-rank', default='genus', help='Rank annotated by PathwayGenie')
+    parser.add_argument('--pathways-dir', type=pathlib.Path, help='Optional sample-relative PathwayGenie results directory')
     parser.add_argument('--profile')
     parser.add_argument('--dry-run', action='store_true')
     args = parser.parse_args()
@@ -230,7 +293,7 @@ def main():
         for report in reports:
             if not report.stat().st_size:
                 raise SystemExit(f'Empty report: {report}')
-            prepare_sample(report, stage, args.bucket, args.prefix, args.pipeline_dir.resolve(), args.graph_max_nodes, args.skip_refresh, args.megahit_max_links)
+            prepare_sample(report, stage, args.bucket, args.prefix, args.pipeline_dir.resolve(), args.graph_max_nodes, args.skip_refresh, args.megahit_max_links, args.pathways_rank, args.pathways_dir)
         command = ['aws'] + (['--profile', args.profile] if args.profile else [])
         target = f's3://{args.bucket}/{args.prefix.rstrip("/")}/'
         # Immutable assets first; HTML is published only after all assets succeed.

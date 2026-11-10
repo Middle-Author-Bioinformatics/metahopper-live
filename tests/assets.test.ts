@@ -52,6 +52,26 @@ test('downloaded bytes must match the report hash and size', async () => {
   await assert.rejects(verifyAsset(buffer,{key:'unused',sha256:sha,size:5}),/size/);
 });
 
+test('PathwayGenie CSV, GFF, HMMER and log downloads require the same exact sample manifest', () => {
+  const prefix = 'reports/aphrophora/Sample/';
+  for (const file of ['pathway_summary.long.csv', 'component_evidence.long.csv', 'bins/Test/genes.gff',
+    'bins/Test/hmm_main.domtbl', 'bins/Test/hmm_main.tbl', 'bins/Test/prodigal.log']) {
+    const logical = 'final/pathways/genus/' + file;
+    const scoped: AssetManifest = {schema:'metahopper-assets-1',sample:'Sample',bucket:'bucket',prefix,
+      files:{[logical]:{key:`${prefix}assets/${checksum}/${logical}`,sha256:checksum,size:4}}};
+    assert.equal(resolveAsset(scoped, prefix+'metahopper_report.html', logical).size, 4);
+    assert.throws(() => resolveAsset(scoped, 'reports/aphrophora/Other/metahopper_report.html', logical));
+    assert.throws(() => resolveAsset(scoped, prefix+'metahopper_report.html', 'final/pathways/genus/unlisted.csv'));
+    assert.throws(() => resolveAsset(scoped, prefix+'metahopper_report.html', 'final/pathways/genus/../../other.csv'));
+  }
+  for (const file of ['payload.html', 'payload.js', 'payload.svg']) {
+    const logical = 'final/pathways/genus/' + file;
+    const scoped: AssetManifest = {schema:'metahopper-assets-1',sample:'Sample',bucket:'bucket',prefix,
+      files:{[logical]:{key:`${prefix}assets/${checksum}/${logical}`,sha256:checksum,size:4}}};
+    assert.throws(() => resolveAsset(scoped, prefix+'metahopper_report.html', logical));
+  }
+});
+
 test('large published assets resolve for direct download while buffering stays bounded', () => {
   const large = structuredClone(manifest);
   large.files[path].size = MAX_BUFFERED_ASSET_BYTES + 1;

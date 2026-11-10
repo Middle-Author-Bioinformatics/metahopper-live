@@ -145,7 +145,7 @@ class PublishTests(unittest.TestCase):
         source=self.root/'megahit/assembly.gfa'
         original=('S\tk3_1\t'+'A'*997+'CGT\nS\tk3_2\tCGTTAA\nL\tk3_1\t+\tk3_2\t+\t3M\n#'+'A'*20000+'\n').encode()
         write(source,original.decode());before=source.stat()
-        with patch.object(publish,'MAX_ASSET_BYTES',8192):
+        with patch.object(publish,'MAX_BUFFERED_ASSET_BYTES',8192):
             output=publish.prepare_sample(self.report,self.stage,'sample-bucket','reports/aphrophora/',PIPELINE)
         manifest=json.loads((output/'asset_manifest.json').read_text())
         logical='_compressed/megahit/assembly.gfa.gz'
@@ -157,15 +157,44 @@ class PublishTests(unittest.TestCase):
         self.assertEqual(source.read_bytes(),original)
         self.assertEqual(source.stat().st_mtime_ns,before.st_mtime_ns)
 
-    def test_gzip_asset_keys_are_deterministic_and_remaining_transfer_limit_is_enforced(self):
+    def test_large_gzip_graph_is_published_as_a_direct_download_with_deterministic_keys(self):
         source=write(self.root/'large.gfa','S\t1\t'+'A'*20000+'\n')
-        with patch.object(publish,'MAX_ASSET_BYTES',8192):
+        with patch.object(publish,'MAX_BUFFERED_ASSET_BYTES',8192):
             a=publish.stage_asset(source,self.root,'_compressed/large.gfa.gz',self.stage,'reports/aphrophora/Sample/',compress=True)
             b=publish.stage_asset(source,self.root,'_compressed/large.gfa.gz',self.stage,'reports/aphrophora/Sample/',compress=True)
             self.assertEqual(a,b)
-            source.write_bytes(os.urandom(20000))
-            with self.assertRaisesRegex(ValueError,'Compressed graph still exceeds'):
-                publish.stage_asset(source,self.root,'_compressed/large.gfa.gz',self.stage,'reports/aphrophora/Sample/',compress=True)
+            original=os.urandom(20000);source.write_bytes(original);before=source.stat()
+            entry=publish.stage_asset(source,self.root,'_compressed/large.gfa.gz',self.stage,'reports/aphrophora/Sample/',compress=True)
+            staged=self.stage/entry['sha256']/'_compressed/large.gfa.gz'
+            self.assertGreater(entry['size'],8192)
+            self.assertTrue(entry['downloadOnly'])
+            self.assertEqual(gzip.decompress(staged.read_bytes()),original)
+            self.assertEqual(entry['sha256'],hashlib.sha256(staged.read_bytes()).hexdigest())
+            self.assertEqual(source.stat().st_mtime_ns,before.st_mtime_ns)
+            self.assertEqual(entry,publish.stage_asset(source,self.root,'_compressed/large.gfa.gz',self.stage,'reports/aphrophora/Sample/',compress=True))
+
+    def test_precompressed_graphs_and_large_fasta_are_direct_downloads(self):
+        for logical in ['megahit/assembly.gfa.gz','final/assembly/consolidated_contigs.fasta']:
+            original=os.urandom(20000)
+            source=self.root/logical;source.parent.mkdir(parents=True,exist_ok=True);source.write_bytes(original)
+            with patch.object(publish,'MAX_BUFFERED_ASSET_BYTES',8192):
+                entry=publish.stage_asset(source,self.root,logical,self.stage,'reports/aphrophora/Sample/')
+            self.assertTrue(entry['downloadOnly'])
+            self.assertEqual((self.stage/entry['sha256']/logical).read_bytes(),original)
+            self.assertEqual(entry['sha256'],hashlib.sha256(original).hexdigest())
+
+    def test_full_publication_continues_when_compressed_graph_exceeds_buffer_limit(self):
+        original=('S\tk3_1\t'+'A'*997+'CGT\n#'+os.urandom(25000).hex()+'\n').encode()
+        source=self.root/'megahit/assembly.gfa';source.write_bytes(original)
+        with patch.object(publish,'MAX_BUFFERED_ASSET_BYTES',8192):
+            output=publish.prepare_sample(self.report,self.stage,'sample-bucket','reports/aphrophora/',PIPELINE)
+        manifest=json.loads((output/'asset_manifest.json').read_text())
+        logical='_compressed/megahit/assembly.gfa.gz';entry=manifest['files'][logical]
+        self.assertGreater(entry['size'],8192);self.assertTrue(entry['downloadOnly'])
+        self.assertEqual(gzip.decompress((output/'assets'/entry['sha256']/logical).read_bytes()),original)
+        self.assertIn('"downloadOnly":true',(output/'metahopper_report.html').read_text())
+        self.assertIn('assembly_graphs.final.json',manifest['files'])
+        self.assertIn('final/bins/genus/Test.fasta',manifest['files'])
 
 
 if __name__=='__main__':unittest.main()

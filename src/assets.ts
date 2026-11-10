@@ -13,7 +13,7 @@ export function assetManifest(html: string): AssetManifest | null {
 export function resolveAsset(manifest: AssetManifest | null, reportPath: string, logical: string, mode: 'buffer' | 'download' = 'buffer'): AssetFile {
   if (!manifest || typeof logical !== 'string' || logical.length > 1000 || /[\\%?#\x00-\x1f]/.test(logical)
       || logical.split('/').some((part) => !part || part === '.' || part === '..')
-      || !/\.(?:json|fasta|fa|fna|gfa(?:\.gz)?|fastg(?:\.gz)?|faa|ffn|gff3|gbff|embl|txt|tsv)$/.test(logical)) throw new Error('Unsupported report asset');
+      || !/\.(?:json|fasta|fa|fna|gfa(?:\.gz)?|fastg(?:\.gz)?|faa|ffn|gff3?|gbff|embl|txt|tsv|csv|domtbl|tbl|log)$/.test(logical)) throw new Error('Unsupported report asset');
   if (!reportPath.endsWith('/metahopper_report.html') || /[\\%?#\x00-\x1f]/.test(reportPath)
       || reportPath.split('/').some((part) => !part || part === '.' || part === '..')) throw new Error('Invalid report path');
   const prefix = reportPath.slice(0, -'metahopper_report.html'.length);
