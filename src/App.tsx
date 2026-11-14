@@ -5,6 +5,7 @@ import { POLL_MS, projectsForGroups, type Project } from '../project';
 import { discoverReports } from './storage';
 import type { Report } from './catalog';
 import ReportFrame from './ReportFrame';
+import Header, { MetaHopperBrand } from './Header';
 
 interface AccountProps { email: string; signOut?: () => void }
 interface DashboardProps extends AccountProps {
@@ -139,13 +140,17 @@ export function Dashboard({ email, signOut, project, projects, onProjectChange }
   }
 
   return <div className="dashboard">
-    <header className="topbar"><div className="identity"><img src="/mab-logo.png" alt="Middle Author Bioinformatics" /><span className="divider" /><div><h1>MetaHopper <span>reports</span></h1>{projects.length > 1 ? <select className="project-picker" aria-label="Project" value={project.id} onChange={(event) => switchProject(event.target.value)}>{projects.map((item) => <option key={item.id} value={item.id}>{item.name}</option>)}</select> : <p>{project.name}</p>}</div></div><div className="account"><span>{email}</span><button onClick={leave}>Sign out</button></div></header>
-    <div className="catalog-bar"><div className="sample-title"><strong>Samples</strong><span className="count">{reports.length}</span></div><input type="search" aria-label="Find a sample" placeholder="Find a sample…" value={query} onChange={(e) => setQuery(e.target.value)} /><select aria-label="Sort samples" value={sort} onChange={(e) => setSort(e.target.value)}><option value="name">Sample name</option><option value="updated">Recently updated</option></select><div className="sync-status" role="status"><span className={`dot ${error ? 'offline' : ''}`} />{refreshing ? 'Checking…' : error ? 'Update failed' : checked ? `Checked ${checked.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}` : 'Connecting…'}<span className="sync-detail"> · every 30s</span></div><button onClick={() => void refresh()} disabled={refreshing} aria-label="Refresh sample list">Refresh</button></div>
-    {error && <div className="notice error" role="alert">Unable to refresh reports. Check your connection and retry. If this persists, your administrator should check your project access.</div>}
+    <Header email={email} onSignOut={leave}>
+      {projects.length > 1
+        ? <select className="project-picker" aria-label="Project" value={project.id} onChange={(event) => switchProject(event.target.value)}>{projects.map((item) => <option key={item.id} value={item.id}>{item.name}</option>)}</select>
+        : <span className="project-name">{project.name}</span>}
+    </Header>
+    <div className="catalog-bar"><div className="sample-title"><strong>Samples</strong><span className="count">{reports.length}</span></div><input type="search" aria-label="Find a sample" placeholder="Find a sample…" value={query} onChange={(e) => setQuery(e.target.value)} /><select aria-label="Sort samples" value={sort} onChange={(e) => setSort(e.target.value)}><option value="name">Sample name</option><option value="updated">Recently updated</option></select></div>
+    {error && <div className="notice error" role="alert">Unable to load the current sample list. Check your connection or contact your administrator if this persists. <button onClick={() => void refresh()} disabled={refreshing}>Retry</button></div>}
     <div className="tabs-wrap"><button className="scroll-arrow" aria-label="Scroll samples left" onClick={() => tabs.current?.scrollBy({ left: -320, behavior: 'smooth' })}>‹</button><div className="sample-tabs" ref={tabs} role="tablist" aria-label="Samples">{visible.map((report, i) => <button key={report.path} role="tab" aria-selected={selected === report.path} aria-controls={`panel-${encodeURIComponent(report.sample)}`} tabIndex={selected === report.path || (!visible.some((item) => item.path === selected) && i === 0) ? 0 : -1} onClick={() => selectReport(report)} onKeyDown={(e) => navigate(e, i)}>{report.sample}{!byPath.has(report.path) && <small>removed</small>}{editedPaths.has(report.path) && <span title="Manual assignments in this tab" aria-label="Manual assignments"> •</span>}</button>)}</div><button className="scroll-arrow" aria-label="Scroll samples right" onClick={() => tabs.current?.scrollBy({ left: 320, behavior: 'smooth' })}>›</button></div>
     {query && !visible.length && <div className="notice">No sample matches “{query}”. <button onClick={() => setQuery('')}>Clear search</button></div>}
     <main className="workspace">
-      {!selected && <div className="empty"><div className="empty-icon">M</div><h2>{checked ? 'Waiting for reports' : error ? 'Reports unavailable' : 'Finding your samples…'}</h2><p>{checked ? 'Completed reports will appear here automatically.' : error ? 'Use Refresh to try again.' : 'Connecting to your project.'}</p></div>}
+      {!selected && <div className="empty"><div className="empty-icon">M</div><h2>{error ? 'Reports unavailable' : checked ? 'Waiting for reports' : 'Finding your samples…'}</h2><p>{error ? 'Use Retry above to try again.' : checked ? 'Completed reports will appear here automatically.' : 'Connecting to your project.'}</p></div>}
       {cache.map((cached) => <ReportFrame key={cached.path} report={byPath.get(cached.path) ?? cached} active={selected === cached.path} removed={!byPath.has(cached.path)} onEdited={onEdited} />)}
     </main>
   </div>;
@@ -170,7 +175,7 @@ export function ProjectSession({ email, signOut }: AccountProps) {
   if (project && projects) return <Dashboard key={project.id} email={email} signOut={signOut} project={project} projects={projects} onProjectChange={setProjectId} />;
 
   return <div className="dashboard">
-    <header className="topbar"><h1>MetaHopper <span>reports</span></h1><div className="account"><span>{email}</span><button onClick={signOut}>Sign out</button></div></header>
+    <Header email={email} onSignOut={signOut} />
     <main className="workspace"><div className="empty">
       <h2>{error ? 'Could not check project access' : projects ? 'No project access yet' : 'Checking project access…'}</h2>
       <p>{error ? 'Please retry or sign in again.' : projects ? 'Ask your administrator to assign your account to a project, then sign out and sign back in.' : 'Loading your projects.'}</p>
@@ -180,7 +185,7 @@ export function ProjectSession({ email, signOut }: AccountProps) {
 }
 
 export default function App() {
-  return <Authenticator hideSignUp components={{ Header: () => <div className="login-heading"><img src="/mab-logo.png" alt="Middle Author Bioinformatics" /><h1>MetaHopper reports</h1><p>Sign in to explore your project.</p></div> }}>
+  return <Authenticator hideSignUp components={{ Header: () => <div className="login-heading"><img className="mab-logo" src="/mab-logo.png" alt="Middle Author Bioinformatics" /><MetaHopperBrand /><p>Sign in to explore your project.</p></div> }}>
     {({ user, signOut }) => <ProjectSession key={user?.userId} email={user?.signInDetails?.loginId ?? user?.username ?? ''} signOut={signOut} />}
   </Authenticator>;
 }
