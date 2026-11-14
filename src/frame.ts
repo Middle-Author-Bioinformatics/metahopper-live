@@ -3,6 +3,9 @@
 export function isolatedReport(html: string, channel: string): string {
   if (!/<head\b[^>]*>/i.test(html)) throw new Error('Expected a complete MetaHopper HTML report.');
   const csp = `<meta http-equiv="Content-Security-Policy" content="default-src 'none'; script-src 'unsafe-inline'; style-src 'unsafe-inline'; img-src data: blob:; font-src data:; connect-src 'none'; object-src 'none'; base-uri 'none'; form-action 'none'">`;
+  // Hide only the generator's top-level build subtitle, including in reports
+  // already uploaded to S3. Keep section descriptions, data and source HTML intact.
+  const presentation = `<style data-metahopper-viewer>body > .wrap > header > h1 + p.sub { display: none !important; }</style>`;
   const safeChannel = JSON.stringify(channel).replace(/</g, '\\u003c');
   const bridge = `<script>
   (() => {
@@ -61,6 +64,7 @@ export function isolatedReport(html: string, channel: string): string {
     });
   })();
   </script>`;
-  return html.replace(/<head\b[^>]*>/i, (head) => head + csp + bridge);
+  return html.replace(/<head\b[^>]*>/i, (head) => head + csp + presentation + bridge);
 }
+
 

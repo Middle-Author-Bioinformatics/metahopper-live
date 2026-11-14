@@ -14,7 +14,13 @@ export default function Header({ email, onSignOut, children }: {
 }) {
   return <header className="topbar">
     <img className="mab-logo" src="/mab-logo.png" alt="Middle Author Bioinformatics" />
-    <div className="project-heading"><MetaHopperBrand />{children}</div>
-    <div className="account"><span title={email}>{email}</span><button onClick={onSignOut}>Sign out</button></div>
+    <div className="project-heading">{children}</div>
+    <div className="identity">
+      <MetaHopperBrand />
+      <div className="account">
+        <span title={`Signed in as ${email}`}>{email}</span>
+        <button onClick={onSignOut}>Sign out</button>
+      </div>
+    </div>
   </header>;
 }

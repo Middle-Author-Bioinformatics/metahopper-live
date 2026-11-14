@@ -96,7 +96,9 @@ These live checks require your AWS deployment. Local build and browser tests do 
 
 ## Dashboard header
 
-The header displays the MAB logo at 20% of the viewport width, a grayscale planthopper mark beside “MetaHopper”, and a larger project selector beside the name. On narrow screens, the controls wrap to keep them usable. The sign-in and project-access screens use the same branding. Sample search, sorting and scrollable tabs remain available; routine refresh status, refresh buttons and the manual pause checkbox are hidden. Connection errors retain a Retry action, and manual assignments still prevent automatic report replacement.
+The MAB logo occupies 20% of the viewport width on the left. The project selector sits beside the MetaHopper brand on desktop; the grayscale planthopper and tightly spaced Space Grotesk wordmark sit at the upper right, with the signed-in email and Sign out button beneath. On narrow screens, the selector moves to its own row and the account email wraps instead of disappearing. The sign-in and project-access screens use the same branding. The font is self-hosted in `public/fonts/` with its SIL Open Font License; no external font service is used.
+
+Sample search, sorting and scrollable tabs remain available. The redundant sample size/update strip and the generated report's top-level “bin set · rank(s) · built” subtitle are hidden. Subtitle styling is applied inside the isolated viewer, so existing S3 reports do not need to be regenerated or uploaded again. Report titles, section descriptions and biological data remain visible. Routine refresh controls stay hidden; connection errors retain Retry, and manual assignments still prevent automatic report replacement.
 
 ## Local development
 
@@ -135,7 +137,7 @@ To add another client project, add its name, group, and distinct prefix in `proj
 
 Merge the assigned-project access change and let the existing Amplify app deploy **both backend and frontend**. The backend adds `custom.report_group_roles` to `amplify_outputs.json`; the frontend needs these role identifiers. Existing buckets, pools, groups, memberships, and S3 permissions are retained. No new Cognito group or manual IAM edit is required.
 
-For an account that needs both client projects, retain membership in **both `phoridae-viewers` and `aphrophora-viewers`**. After deployment, sign out and sign in again. The selector beneath “MetaHopper reports” will offer Phoridae and Aphrophora. It will not offer Sample reports unless that group is also assigned. Your `metahopper-admins` account continues to show all configured projects.
+For an account that needs both client projects, retain membership in **both `phoridae-viewers` and `aphrophora-viewers`**. After deployment, sign out and sign in again. The project selector in the header will offer Phoridae and Aphrophora. It will not offer Sample reports unless that group is also assigned. Your `metahopper-admins` account continues to show all configured projects.
 
 Verify a report and a FASTA/annotation download in each assigned project, and confirm the account cannot list or download Sample reports. Test a single-project account and your staff account too. Freshly issued tokens and existing temporary AWS credentials have finite lifetimes; removing a membership does not retroactively revoke downloaded data or every previously issued credential/URL.
 
