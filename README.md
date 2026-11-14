@@ -1,6 +1,6 @@
 # MetaHopper live report portal
 
-A small Amplify Gen 2 app that gives invited clients a searchable, scrollable row of sample tabs. Each tab runs the original MetaHopper HTML report. The interface lists a private S3 prefix every 30 seconds while the page is visible, plus on focus and manual refresh. No manifest generation or site redeployment is needed when reports change.
+A small Amplify Gen 2 app that gives invited clients a searchable, scrollable row of sample tabs. Each tab runs the original MetaHopper HTML report. The interface lists a private S3 prefix every 30 seconds while the page is visible, plus on focus. Reports update automatically without routine refresh controls. No manifest generation or site redeployment is needed when reports change.
 
 This is a separate app based on the login approach in [your upload portal](https://github.com/Middle-Author-Bioinformatics/sample-amplify-storage-browser). It creates its own Cognito user pool and S3 bucket. It does not change the upload portal or share its existing user accounts.
 
@@ -77,8 +77,8 @@ For periodic publication, use cron or a systemd timer on TheBelly to run the sam
 - Changing an S3 object's ETag, last-modified time, or size marks the report as changed. The selected clean tab downloads the current HTML. Other tabs load it when selected.
 - Removing an object removes its tab. If that tab has manual assignments, its in-memory copy stays available with a removed-report notice so the user can export them.
 - Only selected reports are downloaded. Up to four recent frames stay mounted for quick switching, plus frames with manual assignments. Evicting an older clean frame resets its report controls when reopened.
-- A failed listing retains the last known sample list and visibly reports the error. Refresh retries it. A failed HTML download has its own Retry button.
-- “Pause report updates” keeps the current report stable while reviewing it; discovery of new samples continues.
+- A failed listing retains the last known sample list and visibly reports the error. A Retry button appears when it is needed. A failed HTML download has its own Retry button.
+- Reports update in the background. A report with manual assignments stays protected until the user chooses to replace it; discovery of new samples continues.
 
 The supplied report's rank controls, bin tables, plots, local FASTA selection, and downloads remain inside the report. Reports are isolated in sandboxed frames without access to the parent login credentials. External scripts, subresources, and fetch requests from report HTML are blocked, so this version expects self-contained reports like the supplied file. External assets or relative-file dependencies would need a deliberate extension.
 
@@ -93,6 +93,10 @@ Manual bin assignments remain local to that open browser tab. They are not saved
 5. Sign in separately as Phoridae, Aphrophora, and Sample reports clients and as staff. Check each client role cannot upload/delete and cannot list/read either of the other project prefixes; staff must be able to list/read all three. The viewer UI having no upload button is not an authorization test; test the IAM-backed storage requests too.
 
 These live checks require your AWS deployment. Local build and browser tests do not validate deployed IAM, Cognito email delivery, or S3 CORS. Amplify-managed storage supplies CORS configuration. If adapting to an existing bucket later, configure the actual Cognito group role's prefix-scoped IAM permissions and bucket CORS; changing only the frontend bucket name is insufficient.
+
+## Dashboard header
+
+The header displays the MAB logo at 20% of the viewport width, a grayscale planthopper mark beside “MetaHopper”, and a larger project selector beside the name. On narrow screens, the controls wrap to keep them usable. The sign-in and project-access screens use the same branding. Sample search, sorting and scrollable tabs remain available; routine refresh status, refresh buttons and the manual pause checkbox are hidden. Connection errors retain a Retry action, and manual assignments still prevent automatic report replacement.
 
 ## Local development
 
