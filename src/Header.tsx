@@ -13,14 +13,16 @@ export default function Header({ email, onSignOut, children }: {
   children?: ReactNode;
 }) {
   return <header className="topbar">
-    <img className="mab-logo" src="/mab-logo.png" alt="Middle Author Bioinformatics" />
-    <div className="project-heading">{children}</div>
-    <div className="identity">
-      <MetaHopperBrand />
+    <div className="company-heading">
+      <img className="mab-logo" src="/mab-logo.png" alt="Middle Author Bioinformatics" />
       <div className="account">
         <span title={`Signed in as ${email}`}>{email}</span>
         <button onClick={onSignOut}>Sign out</button>
       </div>
+    </div>
+    <div className="project-heading">
+      <MetaHopperBrand />
+      {children}
     </div>
   </header>;
 }
