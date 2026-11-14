@@ -11,11 +11,10 @@ test('client logins see only their own project; missing or unknown groups fail c
   }
 });
 
-test('staff can review all projects; multiple client groups follow IAM role precedence', () => {
+test('staff can review all projects; clients see every assigned project', () => {
   assert.deepEqual(projectsForGroups(['metahopper-admins']).map((p) => p.id), ['phoridae', 'aphrophora', 'sample-reports']);
   assert.deepEqual(projectsForGroups(['sample-reports', 'metahopper-admins']).map((p) => p.id), ['phoridae', 'aphrophora', 'sample-reports']);
-  assert.deepEqual(projectsForGroups(['aphrophora-viewers', 'phoridae-viewers']).map((p) => p.id), ['phoridae']);
-  assert.deepEqual(projectsForGroups(['sample-reports', 'phoridae-viewers']).map((p) => p.id), ['phoridae']);
-  assert.deepEqual(projectsForGroups(['sample-reports', 'aphrophora-viewers']).map((p) => p.id), ['aphrophora']);
+  assert.deepEqual(projectsForGroups(['aphrophora-viewers', 'phoridae-viewers']).map((p) => p.id), ['phoridae', 'aphrophora']);
+  assert.deepEqual(projectsForGroups(['sample-reports', 'phoridae-viewers']).map((p) => p.id), ['phoridae', 'sample-reports']);
+  assert.deepEqual(projectsForGroups(['sample-reports', 'aphrophora-viewers']).map((p) => p.id), ['aphrophora', 'sample-reports']);
 });
-

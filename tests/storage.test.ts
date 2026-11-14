@@ -5,7 +5,7 @@ import { stripTypeScriptTypes } from 'node:module';
 import vm from 'node:vm';
 import { resolveAsset, verifyAsset, type AssetManifest } from '../src/assets.ts';
 
-// Exercise the real storage functions with only the Amplify/network boundary
+// Exercise the real storage functions with only the project-storage/network boundary
 // stubbed. No AWS credentials, network calls, or huge allocations are needed.
 const code=stripTypeScriptTypes(readFileSync(new URL('../src/storage.ts',import.meta.url),'utf8'))
   .replace(/^import .*;$/gm,'').replace(/\bexport (?=(?:async )?function)/g,'')
@@ -19,7 +19,7 @@ const manifest: AssetManifest={schema:'metahopper-assets-1',sample:'Sample',buck
 function harness(onUrl?:()=>void) {
   const calls: any[]=[];const downloads: any[]=[];
   const functions=vm.runInNewContext(code,{PROJECTS:[{prefix:'reports/aphrophora/'}],resolveAsset,verifyAsset,
-    getUrl:async (input:unknown)=>{calls.push(input);onUrl?.();return {url:new URL('https://example.invalid/asset?signature=private')};},
+    getProjectUrl:async (input:unknown)=>{calls.push(input);onUrl?.();return {url:new URL('https://example.invalid/asset?signature=private')};},
     startAssetDownload:(url:URL,path:string)=>downloads.push({url,path}),
     fetch:()=>assert.fail('Native download must not fetch or allocate the file in JavaScript')});
   return {functions,calls,downloads};

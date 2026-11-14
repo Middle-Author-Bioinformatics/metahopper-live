@@ -1,19 +1,16 @@
-import { getUrl, list } from 'aws-amplify/storage';
+import { getProjectUrl, listProject } from './aws-storage';
 import { PROJECTS, type Project } from '../project';
 import { collectPages, reportsFromItems, type Report } from './catalog';
 import { resolveAsset, startAssetDownload, verifyAsset, type AssetManifest } from './assets';
 
 export async function discoverReports(project: Project, signal?: AbortSignal): Promise<Report[]> {
-  const items = await collectPages((nextToken) => list({
-    path: project.prefix,
-    options: { pageSize: 1000, ...(nextToken ? { nextToken } : {}) },
-  }), signal);
+  const items = await collectPages((nextToken) => listProject(project, nextToken, signal), signal);
   return reportsFromItems(items, project.prefix);
 }
 
 export async function readReport(path: string, signal: AbortSignal): Promise<string> {
   // The signed URL stays in the parent and is never passed into the report frame.
-  const { url } = await getUrl({ path, options: { expiresIn: 120 } });
+  const { url } = await getProjectUrl({ path, options: { expiresIn: 120 } }, signal);
   signal.throwIfAborted();
   const response = await fetch(url, { signal, cache: 'no-store', credentials: 'omit' });
   if (!response.ok) throw new Error(`Report request failed (${response.status})`);
@@ -24,7 +21,7 @@ export async function readReportAsset(reportPath: string, manifest: AssetManifes
   // IAM enforces the signed-in user's group; this bridge further isolates one sample.
   if (!PROJECTS.some((project) => reportPath.startsWith(project.prefix))) throw new Error('Report is outside configured projects');
   const entry = resolveAsset(manifest, reportPath, logical);
-  const { url } = await getUrl({ path: entry.key, options: { expiresIn: 300 } });
+  const { url } = await getProjectUrl({ path: entry.key, options: { expiresIn: 300 } }, signal);
   signal.throwIfAborted();
   const response = await fetch(url, { signal, cache: 'no-store', credentials: 'omit' });
   if (!response.ok) throw new Error(`Sample asset unavailable (${response.status})`);
@@ -40,12 +37,11 @@ export async function downloadReportAsset(reportPath: string, manifest: AssetMan
   if (!PROJECTS.some((project) => reportPath.startsWith(project.prefix))) throw new Error('Report is outside configured projects');
   const entry = resolveAsset(manifest, reportPath, logical, 'download');
   signal.throwIfAborted();
-  const { url } = await getUrl({ path: entry.key, options: {
+  const { url } = await getProjectUrl({ path: entry.key, options: {
     expiresIn: 3600, validateObjectExistence: true,
     contentDisposition: { type: 'attachment', filename: logical.split('/').pop() ?? 'sample-asset' },
     contentType: 'application/octet-stream',
-  } });
+  } }, signal);
   signal.throwIfAborted();
   startAssetDownload(url, logical);
 }
-

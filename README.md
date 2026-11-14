@@ -9,7 +9,7 @@ This is a separate app based on the login approach in [your upload portal](https
 1. Create a **private GitHub repository** named, for example, `metahopper-reports`. Unzip this project and commit its source at the repository root, including `package-lock.json`. Do not commit report HTML, pipeline data, credentials, `node_modules`, `dist`, or `amplify_outputs.json`.
 2. In AWS Amplify, choose **Create new app**, connect that repository, and select its production branch. Use the included `amplify.yml` and an Amplify service role with the standard permissions needed to deploy Gen 2 backends. The build selects Node.js 22 and npm 10.9.4 automatically. Deploy. This creates the login resources, private bucket, and hosted frontend. The initial deployment can take several minutes.
 3. From the deployed branch's backend outputs, record `auth.user_pool_id`, `storage.bucket_name`, and the AWS region. You can download `amplify_outputs.json` from Amplify or run `npx ampx generate outputs --app-id YOUR_APP_ID --branch main` with authorized AWS credentials. Use the **actual generated bucket name**, not its friendly label `metahopperReports`.
-4. Open that user pool in Cognito. Create your own user, then your client's user, using email addresses and temporary passwords. Add Phoridae clients to **`phoridae-viewers`** and Aphrophora clients to **`aphrophora-viewers`**. Add Sample reports clients to **`sample-reports`**. For your own account, use **`metahopper-admins`** to review all projects. Users set a new password on first sign-in. Self-registration is disabled in Cognito as well as hidden in the UI. Users without a supported group cannot read reports. Assign clients to one project group only; sign out and back in after membership changes. Cognito can send invitation emails when you create users; choose that deliberately in the console.
+4. Open that user pool in Cognito. Create your own user, then your client's user, using email addresses and temporary passwords. Add Phoridae clients to **`phoridae-viewers`** and Aphrophora clients to **`aphrophora-viewers`**. Add Sample reports clients to **`sample-reports`**. For your own account, use **`metahopper-admins`** to review all projects. Users set a new password on first sign-in. Self-registration is disabled in Cognito as well as hidden in the UI. Users without a supported group cannot read reports. Assign clients to every project group they should be able to view; sign out and back in after membership changes. Cognito can send invitation emails when you create users; choose that deliberately in the console.
 5. Publish a report using the instructions below. Open the Amplify HTTPS URL, sign in, and verify the report and controls. Share that URL with the invited client once the access checks below pass.
 
 The sign-in page is reachable on the web; report contents and sample listings require authorized login. S3 public access is blocked and unauthenticated identity access is disabled. No S3 website endpoint is needed. Client credentials are temporary, read-only credentials scoped to the project prefix. Do not add public bucket policies or a `guest`/`authenticated` read rule.
@@ -24,9 +24,9 @@ Project access is defined in `project.ts`, shared by Cognito, S3 permissions, an
 | Aphrophora | `aphrophora-viewers` | `reports/aphrophora/` |
 | Sample reports | `sample-reports` | `reports/sample-reports/` |
 
-A client account opens its assigned project automatically. The optional **`metahopper-admins`** group has read-only access to all configured projects and gets a project selector. Only assign that group to trusted staff. Despite its name it cannot upload, delete, or manage users.
+An account with one project opens it automatically. An account assigned to multiple project groups gets a selector containing only those projects. The optional **`metahopper-admins`** group has read-only access to all configured projects and gets a project selector. Only assign that group to trusted staff. Despite its name it cannot upload, delete, or manage users.
 
-Cognito uses one group IAM role, not a union of all group permissions. The staff group has highest precedence. Give a client only its own project group; adding multiple client groups is not a substitute for the staff group. The UI follows the same role precedence. Backend IAM remains the security boundary, even if someone modifies browser code.
+For each project, the app requests temporary credentials for that project’s Cognito group role using `GetCredentialsForIdentity.CustomRoleArn`. Cognito requires the requested role to be present in the user’s signed token; the S3 policies remain scoped to the selected project. Group permissions are not combined into a broad shared role. Staff use their existing all-project read role. Credential caches are separated by identity, ID token, and role, and cleared on sign-out. Backend IAM remains the security boundary, even if someone modifies browser code.
 
 Changing projects clears the previous project's report frames and cancels pending requests. If any report has manual bin assignments, switching asks for confirmation so you can cancel and export first. Polling remains every 30 seconds while visible.
 
@@ -127,6 +127,14 @@ To add another client project, add its name, group, and distinct prefix in `proj
 4. If reports were already uploaded to the wrong prefix, move only those misplaced report objects to the correct prefix. A new upload alone does not remove old copies. Until moved, anything under `reports/phoridae/` is accessible to Phoridae viewers. Previously downloaded copies cannot be recalled.
 5. Perform the AWS access checks above before handing the new client their login.
 
+## Enable access to multiple assigned projects
+
+Merge the assigned-project access change and let the existing Amplify app deploy **both backend and frontend**. The backend adds `custom.report_group_roles` to `amplify_outputs.json`; the frontend needs these role identifiers. Existing buckets, pools, groups, memberships, and S3 permissions are retained. No new Cognito group or manual IAM edit is required.
+
+For an account that needs both client projects, retain membership in **both `phoridae-viewers` and `aphrophora-viewers`**. After deployment, sign out and sign in again. The selector beneath “MetaHopper reports” will offer Phoridae and Aphrophora. It will not offer Sample reports unless that group is also assigned. Your `metahopper-admins` account continues to show all configured projects.
+
+Verify a report and a FASTA/annotation download in each assigned project, and confirm the account cannot list or download Sample reports. Test a single-project account and your staff account too. Freshly issued tokens and existing temporary AWS credentials have finite lifetimes; removing a membership does not retroactively revoke downloaded data or every previously issued credential/URL.
+
 ## Enable Sample reports on an existing deployment
 
 `sample-reports` maps to `reports/sample-reports/` in the existing bucket. Its members can read only that project; `metahopper-admins` can read it too. Uploads create the S3 folder automatically, so no separate bucket or empty folder is needed.
@@ -136,7 +144,7 @@ If you already created `sample-reports` manually in Amplify User management, res
 1. In **Amplify → metahopper-live → main → Authentication → Groups**, open the manually created `sample-reports` group. Record every member so you can restore the memberships. If it has a custom IAM role or is used by another app, preserve that configuration and plan an import instead of deleting it.
 2. For this manually created portal-only group, delete **only the `sample-reports` group** after recording its members. This removes its memberships, not the user accounts or S3 reports. Leave the other groups, user pool, and identity pool in place.
 3. Merge this change and wait for the existing Amplify deployment to succeed. It recreates `sample-reports` with the correct read-only storage permissions.
-4. Add the recorded/intended users to the recreated group. Clients should belong to one project group; use `metahopper-admins` for staff who need all projects. Sign out and back in to refresh access.
+4. Add the recorded/intended users to the recreated group. Clients can belong to multiple assigned project groups; use `metahopper-admins` only for staff who need all projects. Sign out and back in to refresh access.
 5. Upload reports using the command below and perform the AWS access checks above. If TheBelly uses the restricted publishing policy template, update that IAM policy to include the new prefix too.
 
 ```bash
@@ -150,6 +158,8 @@ PYTHONNOUSERSITE=1 python3 "$HOME/bin/metahopper-live/scripts/publish_reports.py
 Replace `--source` with the parent directory of sample folders, for example a directory containing `Sample01/metahopper_report.html` and `Sample02/metahopper_report.html`. Remove `--dry-run` to upload. This leaves any copies previously uploaded under other prefixes in place; those copies retain their existing access permissions.
 
 ## Validation performed
+
+Assigned-project access update (2026-11-14): 27 automated tests, the backend TypeScript check, production frontend build, offline CDK policy/output checks, and a fresh npm 10.9.4 `npm ci` passed. AWS SDK transport tests exercise actual request serialization/signing with mocked HTTP responses for both client roles, staff, report/asset URLs, cancellation, and unassigned-project rejection. Browser automation could not launch in the validation environment because Chromium socket creation was denied; live browser/Cognito/S3 checks remain required after deployment. No AWS memberships or report objects were changed.
 
 Sample reports update (2026-10-30): production frontend build, backend TypeScript check, seven unit tests, and offline AWS policy synthesis passed using the available Node.js 24 environment. The checks cover each client prefix, staff access to all three projects, unchanged group precedence, public-access blocking, and invitation-only signup. The build used temporary placeholder outputs only; live login and AWS authorization must be checked after deployment. Dependency manifests and the lockfile are unchanged.
 
