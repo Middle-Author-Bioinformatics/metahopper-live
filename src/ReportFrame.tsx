@@ -79,9 +79,6 @@ export default function ReportFrame({ report, active, removed, onEdited }: Props
   }
 
   return <section className="report-pane" hidden={!active} role="tabpanel" id={`panel-${encodeURIComponent(report.sample)}`} aria-label={`${report.sample} report`}>
-    <div className="report-tools">
-      <span><strong>{report.sample}</strong> <span className="muted">· {((report.size ?? 0) / 1048576).toFixed(1)} MB{report.lastModified ? ` · Updated ${report.lastModified.toLocaleString()}` : ''}</span></span>
-    </div>
     {removed && <div className="notice">This report was removed from S3. Your open manual assignments are retained here until you leave.</div>}
     {edited && <div className="notice">Manual assignments are held in this tab. Export them from the report before closing. Automatic replacement is paused.</div>}
     {stale && edited && <div className="notice">A newer report is available. <button onClick={reload}>Load latest report</button></div>}
