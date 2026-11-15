@@ -115,10 +115,14 @@ class PublishTests(unittest.TestCase):
              patch.object(publish.subprocess,'run',side_effect=lambda cmd,**kwargs:commands.append(cmd)):
             publish.main()
         self.assertEqual(len(commands),2)
-        self.assertIn('*.html',commands[0]);self.assertIn('*/metahopper_report.html',commands[1])
+        self.assertIn('*.html',commands[0]);self.assertIn('*/taxonomy_index.json',commands[0])
+        self.assertIn('reports/sample-reports/Sample/metahopper_report.html',commands[1])
+        self.assertIn('put-object', commands[1])
+        self.assertIn('--metadata', commands[1])
         for command in commands:
-            self.assertIn('s3://sample-bucket/reports/sample-reports/',command)
+            self.assertTrue(any(arg.startswith(('s3://sample-bucket/reports/sample-reports/', 'reports/sample-reports/')) for arg in command))
             self.assertNotIn('--delete',command)
+        self.assertIn('--size-only', commands[0])
 
     def test_export_failure_stops_before_any_aws_upload_and_forwards_the_link_limit(self):
         commands=[]

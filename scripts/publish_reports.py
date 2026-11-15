@@ -5,6 +5,7 @@ import contextlib
 import gzip
 import hashlib
 import json
+import math
 import pathlib
 import re
 import shutil
@@ -14,6 +15,81 @@ import tempfile
 
 # This is the viewer's in-memory limit, not an upload or download size limit.
 MAX_BUFFERED_ASSET_BYTES = 512 * 1024 * 1024
+
+
+def taxonomy_index(html, sample, stage):
+    """Extract the generator's compact table data; never scrape rendered cells."""
+    match = re.search(r'<script\b[^>]*\bid=["\']metahopper-taxonomy-data["\'][^>]*>([\s\S]*?)</script>', html, re.I)
+    if not match:
+        return None  # Older HTML remains publishable; the app shows its missing index.
+    data = json.loads(match[1])
+    if data.get('schema') != 'metahopper-taxonomy-1' or data.get('sample') != sample or data.get('stage') != stage:
+        raise ValueError('Taxonomy summary belongs to a different sample or bin set')
+    ranks = {'phylum', 'class', 'order', 'family', 'genus', 'species'}
+    fields = ('total_length_bp', 'num_contigs', 'N50', 'GC_percent', 'completeness_percent',
+              'contamination_percent', 'strain_heterogeneity_percent')
+    bins, seen = [], set()
+    for row in data['bins']:
+        name, rank = row.get('bin'), row.get('rank')
+        if not isinstance(name, str) or not name.strip() or len(name) > 1000 or rank not in ranks:
+            raise ValueError('Invalid taxonomy bin name or rank')
+        if name.strip().casefold() in {'unclassified', 'unbinned', 'unassigned'}:
+            continue
+        if (rank, name) in seen:
+            raise ValueError('Duplicate taxonomy bin')
+        seen.add((rank, name))
+        entry = dict(bin=name, rank=rank)
+        for field in fields:
+            value = row.get(field)
+            if value is not None and (isinstance(value, bool) or not isinstance(value, (int, float)) or not math.isfinite(value) or value < 0):
+                raise ValueError('Invalid taxonomy metric: ' + field)
+            entry[field] = value
+        bins.append(entry)
+    return dict(schema=data['schema'], sample=sample, stage=stage, bins=bins)
+
+
+def publish_report(destination, command, bucket, prefix, dry_run=False):
+    """Bind the search index to the exact S3 report ETag, including multipart tags.
+
+    Assets precede HTML, then the matching index is published last. An interrupted
+    or concurrent update cannot associate an old index with a different report.
+    """
+    report = destination / 'metahopper_report.html'
+    body = report.read_bytes()
+    checksum = hashlib.sha256(body).hexdigest()
+    key = prefix.rstrip('/') + '/' + destination.name + '/metahopper_report.html'
+    manifest = destination / 'asset_manifest.json'
+    if manifest.is_file():
+        subprocess.run(command + ['s3', 'cp', str(manifest), f's3://{bucket}/{key.rsplit("/", 1)[0]}/asset_manifest.json',
+                                  '--content-type', 'application/json', '--cache-control', 'no-store', '--no-progress']
+                       + (['--dryrun'] if dry_run else []), check=True)
+    if dry_run:
+        subprocess.run(command + ['s3', 'cp', str(report), f's3://{bucket}/{key}', '--dryrun'], check=True)
+        response = None
+    else:
+        # PutObject returns this upload's ETag directly. No GetObject/HeadObject
+        # permission is needed by the existing write-only publishing principal.
+        response = subprocess.run(command + ['s3api', 'put-object', '--bucket', bucket, '--key', key, '--body', str(report),
+                          '--content-type', 'text/html; charset=utf-8', '--metadata', 'metahopper-sha256=' + checksum,
+                          '--cache-control', 'no-store', '--output', 'json', '--no-cli-pager'],
+                          check=True, text=True, stdout=subprocess.PIPE)
+    path = destination / 'taxonomy_index.json'
+    if not path.is_file():
+        print(destination.name + ': no taxonomy index; refresh this report with the updated generator to enable project search.', flush=True)
+        return
+    if dry_run:
+        print(destination.name + ': would publish the taxonomy index using the report upload ETag.', flush=True)
+        return
+    etag = str(json.loads(response.stdout).get('ETag', '')).strip('"').lower()
+    if not re.fullmatch(r'[0-9a-f]{32}(?:-[1-9][0-9]*)?', etag):
+        raise ValueError('Report upload returned no usable ETag; its taxonomy index was not published. Retry publication.')
+    index = json.loads(path.read_text())
+    index['report'] = dict(etag=etag, sha256=checksum, size=len(body))
+    path.write_text(json.dumps(index, separators=(',', ':'), allow_nan=False) + '\n')
+    index_key = key.rsplit('/', 1)[0] + '/taxonomy/' + etag + '.json'
+    subprocess.run(command + ['s3', 'cp', str(path), f's3://{bucket}/{index_key}', '--content-type', 'application/json',
+                              '--cache-control', 'no-store', '--no-progress'], check=True)
+    print(destination.name + ': project taxonomy search index published.', flush=True)
 
 
 def embed_manifest(html, manifest):
@@ -244,6 +320,9 @@ def _prepare_sample(report, stage, bucket, prefix, pipeline_dir, max_nodes=40000
             size = manifest['files'][published_logical]['size']
             print(f'{sample}: direct browser download ({size / (1024 * 1024):,.1f} MiB): {published_logical}', flush=True)
     (destination / report.name).write_text(embed_manifest(html, manifest))
+    index = taxonomy_index(html, sample, stage_name)
+    if index is not None:
+        (destination / 'taxonomy_index.json').write_text(json.dumps(index, separators=(',', ':'), allow_nan=False) + '\n')
     (destination / 'asset_manifest.json').write_text(json.dumps(manifest, indent=2) + '\n')
     counts = graph_data.get('counts', {})
     print(f'{sample}: {len(sources)} assets; graph mappings {counts.get("matched_contigs", 0):,}; '
@@ -297,14 +376,15 @@ def main():
         command = ['aws'] + (['--profile', args.profile] if args.profile else [])
         target = f's3://{args.bucket}/{args.prefix.rstrip("/")}/'
         # Immutable assets first; HTML is published only after all assets succeed.
-        commands = [command + ['s3', 'sync', str(stage), target, '--exclude', '*.html', '--cache-control', 'no-store', '--no-progress'],
-                    command + ['s3', 'sync', str(stage), target, '--exclude', '*', '--include', '*/metahopper_report.html',
-                               '--content-type', 'text/html; charset=utf-8', '--cache-control', 'no-store', '--no-progress']]
+        # Content hashes are part of every immutable asset key. Size-only sync
+        # avoids retransferring identical multi-GB graphs staged with new mtimes.
+        assets_command = command + ['s3', 'sync', str(stage), target, '--exclude', '*.html',
+                                    '--exclude', '*/taxonomy_index.json', '--exclude', '*/asset_manifest.json',
+                                    '--size-only', '--cache-control', 'no-store', '--no-progress']
         print(f'{len(reports)} reports staged. Existing S3 objects will not be deleted.', flush=True)
-        for cmd in commands:
-            if args.dry_run:
-                cmd.append('--dryrun')
-            subprocess.run(cmd, check=True)
+        subprocess.run(assets_command + (['--dryrun'] if args.dry_run else []), check=True)
+        for report in reports:
+            publish_report(stage / report.parent.name, command, args.bucket, args.prefix, args.dry_run)
 
 
 if __name__ == '__main__':

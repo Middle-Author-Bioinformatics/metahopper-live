@@ -5,6 +5,29 @@
 /* Self-hosted wordmark font; no external font requests. License: public/fonts/OFL.txt. */
 @font-face{font-family:"Space Grotesk";src:url('/fonts/SpaceGrotesk.ttf') format('truetype');font-style:normal;font-weight:300 700;font-display:swap}
 .topbar{display:grid;grid-template-columns:30vw minmax(0,1fr);align-items:start;padding:12px 22px;gap:clamp(16px,2vw,32px);border-bottom:1px solid var(--line);background:white}
+.taxonomy-search{flex-shrink:0;background:#fff;border-top:1px solid #e1e9eb;border-bottom:1px solid #dae4e7;padding:14px 26px}
+.taxonomy-controls{display:flex;align-items:flex-end;gap:12px;flex-wrap:wrap}
+.taxonomy-controls label{display:flex;flex-direction:column;gap:6px;font-size:12px;font-weight:600;color:#546d74}
+.taxonomy-controls .taxonomy-query{flex:1;max-width:540px;min-width:240px}
+.taxonomy-query input{width:100%;font-weight:400}
+.taxonomy-controls select{min-width:130px}
+.taxonomy-clear{min-height:41px}
+.taxonomy-scope{margin:0 0 12px auto;color:#607578;font-size:12px}
+.taxonomy-status{font-size:13px;color:#607578;margin:15px 0 10px}
+.taxonomy-status strong{color:#233b42;font-weight:600}
+.taxonomy-status button{font-size:12px;padding:3px 8px}
+.taxonomy-results{max-height:min(38vh,400px);overflow:auto;border:1px solid #dce6e8;border-radius:9px}
+.taxonomy-results table{border-collapse:collapse;width:100%;font-size:13px;text-align:left}
+.taxonomy-results th,.taxonomy-results td{padding:9px 13px;white-space:nowrap;border-bottom:1px solid #e5ecee}
+.taxonomy-results th{background:#edf4f5;color:#425e66;position:sticky;top:0;z-index:1;font-size:12px}
+.taxonomy-results tbody tr:hover{background:#f3f8f8}
+.taxonomy-results th:nth-child(n+4),.taxonomy-results td:nth-child(n+4){text-align:right;font-variant-numeric:tabular-nums}
+.taxon-link{border:0;background:transparent;color:#136b78;padding:0;text-align:left;text-decoration:underline;text-underline-offset:3px;font-size:inherit;font-weight:500;white-space:nowrap}
+.taxonomy-pagination{display:flex;align-items:center;justify-content:space-between;gap:12px;font-size:12px;color:#607578;margin-top:10px}
+.taxonomy-pagination>div{display:flex;align-items:center;gap:10px;white-space:nowrap}
+.taxonomy-pagination button{padding:5px 10px;font-size:12px}
+.taxonomy-empty{font-size:13px;color:#607578;margin:12px 0 0}
+@media(max-width:760px){.taxonomy-search{padding:12px}.taxonomy-scope{margin:0;align-self:center}.taxonomy-pagination{align-items:flex-start;flex-direction:column}.taxonomy-controls .taxonomy-query{min-width:180px}}
 .mab-logo{display:block;width:100%;height:auto;object-fit:contain}
 .company-heading{display:flex;flex-direction:column;align-items:flex-start;gap:8px;min-width:0}
 .project-heading{display:flex;flex-direction:column;align-items:flex-end;justify-self:end;gap:8px;min-width:0;max-width:100%}

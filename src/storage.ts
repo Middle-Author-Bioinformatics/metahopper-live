@@ -1,6 +1,7 @@
 import { getProjectUrl, listProject } from './aws-storage';
 import { PROJECTS, type Project } from '../project';
-import { collectPages, reportsFromItems, type Report } from './catalog';
+import { collectPages, reportsFromItems, taxonomyPath, type Report } from './catalog';
+import { MAX_TAXONOMY_BYTES, parseTaxonomy, type TaxonomyIndex } from './taxonomy';
 import { resolveAsset, startAssetDownload, verifyAsset, type AssetManifest } from './assets';
 
 export async function discoverReports(project: Project, signal?: AbortSignal): Promise<Report[]> {
@@ -15,6 +16,37 @@ export async function readReport(path: string, signal: AbortSignal): Promise<str
   const response = await fetch(url, { signal, cache: 'no-store', credentials: 'omit' });
   if (!response.ok) throw new Error(`Report request failed (${response.status})`);
   return response.text();
+}
+
+export async function readTaxonomyIndex(project: Project, report: Report, signal: AbortSignal): Promise<TaxonomyIndex> {
+  const parts = report.path.startsWith(project.prefix) ? report.path.slice(project.prefix.length).split('/') : [];
+  const path = taxonomyPath(report);
+  if (parts.length !== 2 || parts[0] !== report.sample || parts[1] !== 'metahopper_report.html'
+      || parts.some((p) => !p || p === '.' || p === '..') || /[\\%?#\x00-\x1f]/.test(report.path)
+      || !path || report.taxonomyPath !== path) throw new Error('Taxonomy index is outside this report and project');
+  signal.throwIfAborted();
+  const { url } = await getProjectUrl({ path, options: { expiresIn: 120 } }, signal);
+  signal.throwIfAborted();
+  const response = await fetch(url, { signal, cache: 'no-store', credentials: 'omit' });
+  if (!response.ok || !response.body) throw new Error('Taxonomy index unavailable');
+  const length = Number(response.headers.get('content-length') ?? 0);
+  const reader = response.body.getReader();
+  let bytes = 0, text = '';
+  const decoder = new TextDecoder();
+  try {
+    if (length > MAX_TAXONOMY_BYTES) throw new Error('Taxonomy index exceeds the size limit');
+    while (true) {
+      signal.throwIfAborted();
+      const { done, value } = await reader.read();
+      if (done) break;
+      bytes += value.byteLength;
+      if (bytes > MAX_TAXONOMY_BYTES) throw new Error('Taxonomy index exceeds the size limit');
+      text += decoder.decode(value, { stream: true });
+    }
+    text += decoder.decode();
+    signal.throwIfAborted();
+    return parseTaxonomy(JSON.parse(text), report);
+  } finally { await reader.cancel(); reader.releaseLock(); }
 }
 
 export async function readReportAsset(reportPath: string, manifest: AssetManifest | null, logical: string, signal: AbortSignal): Promise<ArrayBuffer> {
