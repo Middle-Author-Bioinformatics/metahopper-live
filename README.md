@@ -39,35 +39,63 @@ reports/phoridae/SPH1870/metahopper_report.html
 
 Use your existing AWS CLI credentials on TheBelly. A named `--profile` is optional; it is unrelated to dashboard client accounts. The supplied `scripts/belly-iam-policy.json` is an IAM identity-policy template for its publishing principal. Replace every bucket placeholder. It permits listing the three report prefixes and writing reports, with no read or delete permission. This publishing policy is for TheBelly, never client accounts; narrow it if a publisher should handle only one project. Use your normal AWS credential setup; never place AWS access keys in GitHub or frontend variables.
 
-Update your checkout on TheBelly with `git pull --ff-only`. The helper now **requires `--prefix`**: it never guesses a destination from local folder names. It finds only immediate sample folders, stages just their report HTML files, then uses S3 sync to upload new or locally newer/size-changed files. It does not upload FASTQ, FASTA, bins, or other outputs, and does not delete remote reports.
+Update your checkout on TheBelly with `git pull --ff-only`. The helper **requires `--prefix`**: it never guesses a destination from local folder names. It finds immediate sample folders and refreshes their reports from saved pipeline outputs. For each sample it stages the HTML and referenced FASTA, graph, annotation and pathway assets, uploads the assets before the report and taxonomy index, then removes that sample's temporary directory before preparing the next. It does not publish raw FASTQ reads or delete remote reports.
 
 ```bash
 python3 scripts/publish_reports.py \
   --source "$HOME/Jagiellonian/Phoridae" \
+  --pipeline-dir "$HOME/bin/MetaHopper" \
   --bucket YOUR_GENERATED_BUCKET_NAME \
   --prefix reports/phoridae/ \
+  --staging-dir "$HOME/Jagiellonian/Phoridae/.publish-staging" \
   --dry-run
 ```
 
 For Aphrophora, use the same bucket with a different explicit prefix:
 
 ```bash
-PYTHONNOUSERSITE=1 python3 "$HOME/bin/metahopper-live/scripts/publish_reports.py" --source "$HOME/Jagiellonian/Aphrophora/Aphrophora_reports" --bucket YOUR_GENERATED_BUCKET_NAME --prefix reports/aphrophora/ --dry-run
+PYTHONNOUSERSITE=1 python3 "$HOME/bin/metahopper-live/scripts/publish_reports.py" --source "$HOME/Jagiellonian/Aphrophora" --pipeline-dir "$HOME/bin/MetaHopper" --bucket YOUR_GENERATED_BUCKET_NAME --prefix reports/aphrophora/ --dry-run
 ```
 
-`PYTHONNOUSERSITE=1` is a workaround for the conflicting user-installed Python packages on TheBelly; it does not change AWS credentials. Omit it on systems that do not need it. Remove `--dry-run` to publish. Run after each pipeline batch completes. If a rerun deliberately preserves an old file modification time and file size, `aws s3 sync` may skip it; touch the completed HTML before publishing or use `aws s3 cp` for that report.
+`PYTHONNOUSERSITE=1` is a workaround for conflicting user-installed Python packages; it does not change AWS credentials. Omit it on systems that do not need it. Remove `--dry-run` to publish. Run after each pipeline batch completes. Hash-named immutable assets use size-only sync, so identical large files are not retransferred because of fresh local staging timestamps. The HTML and mutable manifest are uploaded separately; report changes produce a matching taxonomy index.
 
-For one completed sample, this command is enough:
+For one completed sample, select it with `--sample`:
 
 ```bash
-aws s3 cp \
-  SPH1014/metahopper_report.html \
-  s3://YOUR_GENERATED_BUCKET_NAME/reports/phoridae/SPH1014/metahopper_report.html \
-  --content-type 'text/html; charset=utf-8' \
-  --cache-control no-store
+python3 scripts/publish_reports.py \
+  --source "$HOME/Jagiellonian/Phoridae" --sample SPH1014 \
+  --pipeline-dir "$HOME/bin/MetaHopper" \
+  --bucket YOUR_GENERATED_BUCKET_NAME --prefix reports/phoridae/
 ```
 
-Upload after the HTML has finished writing. The staging helper detects changes during copying, but cannot know whether a pipeline has paused partway through a report. Ideally your pipeline writes a temporary filename and renames it to `metahopper_report.html` only when complete.
+Publish completed sample outputs. The publisher respects the pipeline lock, validates sample ownership and hashes, and rejects assets that change during staging. New HTML is uploaded only after that sample's assets succeed. If a later sample fails, earlier completed publications remain available; retrying is safe and does not delete S3 objects.
+
+### Temporary storage and missing graphs
+
+Staging requires space for one sample's report assets, rather than the entire
+project. `--staging-dir PATH` selects the temporary parent and creates it if
+needed. The default honors `TMPDIR` or the system temporary directory. Select
+a filesystem with sufficient free bytes **and inodes**; `df -h PATH` and
+`df -i PATH` check both. On a disk/quota failure the partial sample's temporary
+directory is removed and the error identifies the staging location and number
+of samples completed earlier in that attempt. Original sample outputs remain.
+The reusable staging parent can remain; each generated child directory is
+removed after its sample.
+
+`staged ... target s3://...` is a local preparation summary. `Published N/M`
+confirms that the sample's assets, report and any available taxonomy index
+finished uploading. A dry run is explicitly labeled and uploads nothing.
+
+`graphs: 0` is separate from storage capacity: no usable source assembly graph
+was imported. The publisher now warns and reports unmapped-contig reasons from
+`assembly_graphs.final.json`; FASTA/annotation publishing can still proceed.
+Inspect retained GFA/FASTG files and original MEGAHIT contigs before attempting
+graph recovery. The publisher cannot restore missing original graph information
+from renamed final FASTAs alone.
+
+Staging-fix validation: 31 publisher tests passed, including per-sample cleanup,
+asset-before-HTML ordering, a later sample running out of space, failed-upload
+isolation, partial-copy cleanup, dry runs, profiles, and missing-graph warnings.
 
 For periodic publication, use cron or a systemd timer on TheBelly to run the same helper after completed reports are available. Prevent overlapping runs, for example with `flock`. A one-minute uploader plus a 30-second browser poll means up to roughly 90 seconds of delay, plus upload/list/download time. Calling the upload command at pipeline completion avoids the uploader interval.
 
