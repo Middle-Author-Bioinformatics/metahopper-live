@@ -5,12 +5,28 @@ export function isolatedReport(html: string, channel: string): string {
   const csp = `<meta http-equiv="Content-Security-Policy" content="default-src 'none'; script-src 'unsafe-inline'; style-src 'unsafe-inline'; img-src data: blob:; font-src data:; connect-src 'none'; object-src 'none'; base-uri 'none'; form-action 'none'">`;
   // Hide only the generator's top-level build subtitle, including in reports
   // already uploaded to S3. Keep section descriptions, data and source HTML intact.
-  const presentation = `<style data-metahopper-viewer>body > .wrap > header > h1 + p.sub { display: none !important; }</style>`;
+  const presentation = `<style data-metahopper-viewer>body > .wrap > header > h1 + p.sub { display: none !important; }#bin-table tr.mh-search-target td{background:#e2f0f2;box-shadow:inset 0 2px #207b86,inset 0 -2px #207b86}</style>`;
   const safeChannel = JSON.stringify(channel).replace(/</g, '\\u003c');
   const bridge = `<script>
   (() => {
     const channel = ${safeChannel};
     const pending = new Map(); let serial = 0;
+    let lastFocus = '';
+    function focusBin(data) {
+      if (typeof data.bin !== 'string' || data.bin.length > 1000 || !['phylum','class','order','family','genus','species'].includes(data.rank)) return;
+      const key = JSON.stringify([data.rank, data.bin, data.request]);
+      if (key === lastFocus) return;
+      const search = document.getElementById('bin-search'), rank = document.getElementById('rank-filter');
+      if (!search || !rank) return;
+      const target = [...document.querySelectorAll('#bin-table tbody tr')].find(row => row.dataset.rank === data.rank && row.dataset.binName === data.bin);
+      if (!target) return;
+      lastFocus = key;
+      document.querySelector('.tab[data-id="bins"]')?.click();
+      rank.value = data.rank; search.value = data.bin; search.dispatchEvent(new Event('input'));
+      document.querySelectorAll('.mh-search-target').forEach(row => row.classList.remove('mh-search-target'));
+      target.classList.add('mh-search-target');
+      target.scrollIntoView({block:'center', behavior:'smooth'});
+    }
     const requestAsset = (path, download) => new Promise((resolve, reject) => {
       const id = 'asset-' + (++serial);
       const timer = setTimeout(() => { pending.delete(id); reject(Error('Sample asset request timed out')); }, 180000);
@@ -32,6 +48,7 @@ export function isolatedReport(html: string, channel: string): string {
         dispatchEvent(new Event('resize'));
         if (typeof window.__draw === 'function') window.__draw();
       }
+      if (event.source === parent && event.data?.channel === channel && event.data.type === 'focus-bin') focusBin(event.data);
     });
     addEventListener('DOMContentLoaded', () => {
       document.addEventListener('click', async event => {

@@ -182,6 +182,53 @@ Validated on 2026-10-19 using Node.js 24, React 19, Amplify JS 6.22.2, Amplify U
 
 No AWS resources were provisioned, no invitations sent, and no report data published during this validation.
 
+## Taxonomic search across samples
+
+The dashboard's **Search taxa across samples** field searches bin names within
+the selected project. It shows the sample, matched rank, bin size, contig count,
+N50, completeness and contamination. Click a result to open and highlight that
+bin in its sample report. Results can be filtered by rank and paged; missing
+quality values appear as a dash. Domain assignments such as
+`unclassified_Bacteria` remain searchable; generic unbinned buckets do not.
+
+Pull both the updated MetaHopper generator and this viewer/publisher. Republish
+existing samples using the normal command (omit `--skip-refresh` the first time):
+
+```bash
+conda run --no-capture-output -n metahopper-lean \
+  python ~/bin/metahopper-live/scripts/publish_reports.py \
+  --source /data/samples --pipeline-dir ~/bin/MetaHopper \
+  --bucket YOUR_GENERATED_BUCKET_NAME --prefix reports/phoridae/ \
+  --graph-max-nodes 4000000 --megahit-max-links 10000000
+```
+
+Use `reports/aphrophora/` for that project and repeat `--sample Sample01` to
+select particular sample folders. Publication regenerates reports and graph
+catalogues using saved outputs; it does not run CheckM or the assembly pipeline.
+For missing quality, first run MetaHopper's `metahopper_postprocess.py
+--checkm-only` as documented in that repository.
+
+The generator embeds compact bin summaries. The publisher uploads immutable
+assets first, HTML with S3 PutObject second, and a small JSON index at
+`<sample>/taxonomy/<report-etag>.json` last. It uses the ETag returned by the
+upload. A new report cannot select an old index. Index publication uses existing
+write permissions; no S3 read or new client permissions are required. Size-only
+sync applies to content-hashed asset keys so identical large graph/FASTA files
+are not retransferred. The mutable manifest and HTML are uploaded separately.
+
+The app discovers only an index matching the current report ETag and loads at
+most four small indexes concurrently when a search starts. It caches them per
+report version, cancels on project changes, and displays index coverage and
+failures. Older reports without an index continue to open and explicitly count
+as needing republishing. No multi-megabyte HTML scans or additional backend
+database are needed. Search uses the existing project IAM roles and does not
+search projects outside the user's selected authorized project.
+
+Validation: 34 dashboard tests, 25 publisher tests, TypeScript/Vite build,
+109 MetaHopper Python tests, and report/graph/annotation JavaScript interaction
+checks passed. Browser file previews were blocked by the workspace's URL policy;
+SVGs and report interactions were additionally checked in an offline DOM.
+
 ## References
 
 - [Amplify group-based storage rules](https://docs.amplify.aws/react/build-a-backend/storage/authorization/)

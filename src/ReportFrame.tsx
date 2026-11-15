@@ -3,12 +3,14 @@ import type { Report } from './catalog';
 import { isolatedReport } from './frame';
 import { downloadReportAsset, readReport, readReportAsset } from './storage';
 import { assetManifest, type AssetManifest } from './assets';
+import type { BinFocus } from './taxonomy';
 
 interface Props {
   report: Report; active: boolean; removed: boolean;
   onEdited: (path: string, edited: boolean) => void;
+  binFocus?: BinFocus;
 }
-export default function ReportFrame({ report, active, removed, onEdited }: Props) {
+export default function ReportFrame({ report, active, removed, onEdited, binFocus }: Props) {
   const frame = useRef<HTMLIFrameElement>(null);
   const channel = useRef(crypto.randomUUID());
   const [loaded, setLoaded] = useState<{ version: string; html: string; manifest: AssetManifest | null }>();
@@ -69,8 +71,9 @@ export default function ReportFrame({ report, active, removed, onEdited }: Props
 
   function resizeFrame() {
     frame.current?.contentWindow?.postMessage({ channel: channel.current, type: 'resize' }, '*');
+    if (active && binFocus) frame.current?.contentWindow?.postMessage({ channel: channel.current, type: 'focus-bin', ...binFocus }, '*');
   }
-  useEffect(() => { if (active) resizeFrame(); }, [active, loaded?.version]);
+  useEffect(() => { if (active) resizeFrame(); }, [active, loaded?.version, binFocus]);
 
   function reload() {
     if (edited && !window.confirm('Reloading clears the manual bin assignments in this tab. Export them from the report before continuing. Reload now?')) return;
