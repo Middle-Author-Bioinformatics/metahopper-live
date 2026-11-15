@@ -2,6 +2,8 @@
 """Publish sample reports and immutable graph/FASTA assets to private project S3."""
 import argparse
 import contextlib
+from collections import Counter
+import errno
 import gzip
 import hashlib
 import json
@@ -111,27 +113,31 @@ def stage_asset(source, root, logical, assets, sample_prefix, compress=False):
     if compress and not logical.endswith(('.gfa.gz', '.fastg.gz')):
         raise ValueError('Only source graph downloads can be gzip-compressed')
     digest = hashlib.sha256()
-    with tempfile.NamedTemporaryFile(dir=assets, delete=False) as handle:
-        temporary = pathlib.Path(handle.name)
-        stream = gzip.GzipFile(filename='', mode='wb', fileobj=handle, compresslevel=1, mtime=0) if compress else contextlib.nullcontext(handle)
-        with stream as output, resolved.open('rb') as inp:
-            for chunk in iter(lambda: inp.read(8 * 1024 * 1024), b''):
-                if not compress:
+    temporary = None
+    try:
+        with tempfile.NamedTemporaryFile(dir=assets, delete=False) as handle:
+            temporary = pathlib.Path(handle.name)
+            stream = gzip.GzipFile(filename='', mode='wb', fileobj=handle, compresslevel=1, mtime=0) if compress else contextlib.nullcontext(handle)
+            with stream as output, resolved.open('rb') as inp:
+                for chunk in iter(lambda: inp.read(8 * 1024 * 1024), b''):
+                    if not compress:
+                        digest.update(chunk)
+                    output.write(chunk)
+        after = resolved.stat()
+        if (before.st_size, before.st_mtime_ns) != (after.st_size, after.st_mtime_ns):
+            raise ValueError(f'Asset changed during publication; retry after the pipeline finishes: {source}')
+        size = temporary.stat().st_size
+        if compress:
+            with temporary.open('rb') as handle:
+                for chunk in iter(lambda: handle.read(8 * 1024 * 1024), b''):
                     digest.update(chunk)
-                output.write(chunk)
-    after = resolved.stat()
-    if (before.st_size, before.st_mtime_ns) != (after.st_size, after.st_mtime_ns):
-        temporary.unlink()
-        raise ValueError(f'Asset changed during publication; retry after the pipeline finishes: {source}')
-    size = temporary.stat().st_size
-    if compress:
-        with temporary.open('rb') as handle:
-            for chunk in iter(lambda: handle.read(8 * 1024 * 1024), b''):
-                digest.update(chunk)
-    checksum = digest.hexdigest()
-    destination = assets / checksum / logical
-    destination.parent.mkdir(parents=True, exist_ok=True)
-    temporary.replace(destination)
+        checksum = digest.hexdigest()
+        destination = assets / checksum / logical
+        destination.parent.mkdir(parents=True, exist_ok=True)
+        temporary.replace(destination)
+    finally:
+        if temporary is not None:
+            temporary.unlink(missing_ok=True)
     entry = dict(key=sample_prefix + 'assets/' + checksum + '/' + logical, sha256=checksum, size=size)
     if size > MAX_BUFFERED_ASSET_BYTES:
         # The authenticated parent viewer starts a native browser download. It
@@ -259,7 +265,13 @@ def _prepare_sample(report, stage, bucket, prefix, pipeline_dir, max_nodes=40000
     limit_errors = [warning for warning in graph_data.get('warnings', []) if 'Graph exceeds ' in warning]
     if limit_errors:
         raise ValueError('Graph catalogue import failed: ' + '; '.join(limit_errors)
-                         + '. Increase --graph-max-nodes and retry. No files were uploaded.')
+                         + '. Increase --graph-max-nodes and retry. No files for this sample were uploaded.')
+    if not graph_data.get('graphs'):
+        reasons = Counter(graph_data.get('unmapped', {}).values())
+        detail = ', '.join(f'{reason}={count:,}' for reason, count in reasons.most_common())
+        print(f'WARNING: {sample}: no usable assembly graphs were imported. '
+              f'FASTA/annotation publishing can continue, but assembly graphs cannot be displayed. '
+              f'Inspect {catalog}' + (f' ({detail})' if detail else ''), flush=True)
     fasta = next((p for p in [base / 'assembly/consolidated_contigs.fasta',
                               root / 'assembly/preliminary_contigs.fasta', root / 'megahit/final.contigs.fa'] if p.is_file()), None)
     if fasta is None:
@@ -313,7 +325,7 @@ def _prepare_sample(report, stage, bucket, prefix, pipeline_dir, max_nodes=40000
         manifest['files'][published_logical] = stage_asset(source, root, published_logical, assets, sample_prefix, compress=compress)
         expected = pathway_expected.get(logical)
         if expected and any(manifest['files'][published_logical][key] != value for key, value in expected.items()):
-            raise ValueError('Pathway outputs changed after report generation: ' + logical + '. Regenerate before publishing; no files were uploaded.')
+            raise ValueError('Pathway outputs changed after report generation: ' + logical + '. Regenerate before publishing; no files for this sample were uploaded.')
         if compress:
             print(f'{sample}: full source graph compressed for download: {logical} -> {published_logical}', flush=True)
         if manifest['files'][published_logical].get('downloadOnly'):
@@ -325,8 +337,8 @@ def _prepare_sample(report, stage, bucket, prefix, pipeline_dir, max_nodes=40000
         (destination / 'taxonomy_index.json').write_text(json.dumps(index, separators=(',', ':'), allow_nan=False) + '\n')
     (destination / 'asset_manifest.json').write_text(json.dumps(manifest, indent=2) + '\n')
     counts = graph_data.get('counts', {})
-    print(f'{sample}: {len(sources)} assets; graph mappings {counts.get("matched_contigs", 0):,}; '
-          f'unmapped {counts.get("unmatched_contigs", 0):,}; s3://{bucket}/{sample_prefix}', flush=True)
+    print(f'{sample}: staged {len(sources)} assets; graph mappings {counts.get("matched_contigs", 0):,}; '
+          f'unmapped {counts.get("unmatched_contigs", 0):,}; target s3://{bucket}/{sample_prefix}', flush=True)
     return destination
 
 
@@ -347,6 +359,9 @@ def main():
     parser.add_argument('--pathways-dir', type=pathlib.Path, help='Optional sample-relative PathwayGenie results directory')
     parser.add_argument('--profile')
     parser.add_argument('--dry-run', action='store_true')
+    parser.add_argument('--staging-dir', type=pathlib.Path,
+                        help='Temporary staging parent on a filesystem with free bytes and inodes; '
+                             'only one sample is staged at a time (default: TMPDIR or system temporary directory)')
     args = parser.parse_args()
     if not args.source.is_dir():
         parser.error('--source must be an existing directory')
@@ -367,24 +382,42 @@ def main():
             parser.error('No completed report for: ' + ', '.join(sorted(missing)))
     if not reports:
         parser.error('No sample reports found')
-    with tempfile.TemporaryDirectory(prefix='metahopper-publish-') as directory:
-        stage = pathlib.Path(directory)
+    if any(not report.stat().st_size for report in reports):
+        parser.error('An empty report was found; regenerate it before publishing')
+    staging_parent = args.staging_dir.expanduser().resolve() if args.staging_dir else pathlib.Path(tempfile.gettempdir())
+    command = ['aws'] + (['--profile', args.profile] if args.profile else [])
+    target = f's3://{args.bucket}/{args.prefix.rstrip("/")}/'
+    completed = 0
+    current = None
+    try:
+        staging_parent.mkdir(parents=True, exist_ok=True)
+        print(f'{len(reports)} reports selected; staging one sample at a time in {staging_parent}. '
+              'Existing S3 objects will not be deleted.', flush=True)
         for report in reports:
-            if not report.stat().st_size:
-                raise SystemExit(f'Empty report: {report}')
-            prepare_sample(report, stage, args.bucket, args.prefix, args.pipeline_dir.resolve(), args.graph_max_nodes, args.skip_refresh, args.megahit_max_links, args.pathways_rank, args.pathways_dir)
-        command = ['aws'] + (['--profile', args.profile] if args.profile else [])
-        target = f's3://{args.bucket}/{args.prefix.rstrip("/")}/'
-        # Immutable assets first; HTML is published only after all assets succeed.
-        # Content hashes are part of every immutable asset key. Size-only sync
-        # avoids retransferring identical multi-GB graphs staged with new mtimes.
-        assets_command = command + ['s3', 'sync', str(stage), target, '--exclude', '*.html',
-                                    '--exclude', '*/taxonomy_index.json', '--exclude', '*/asset_manifest.json',
-                                    '--size-only', '--cache-control', 'no-store', '--no-progress']
-        print(f'{len(reports)} reports staged. Existing S3 objects will not be deleted.', flush=True)
-        subprocess.run(assets_command + (['--dryrun'] if args.dry_run else []), check=True)
-        for report in reports:
-            publish_report(stage / report.parent.name, command, args.bucket, args.prefix, args.dry_run)
+            current = report.parent.name
+            with tempfile.TemporaryDirectory(prefix='metahopper-publish-', dir=staging_parent) as directory:
+                stage = pathlib.Path(directory)
+                prepare_sample(report, stage, args.bucket, args.prefix, args.pipeline_dir.resolve(), args.graph_max_nodes, args.skip_refresh, args.megahit_max_links, args.pathways_rank, args.pathways_dir)
+                # Assets precede this sample's HTML; a failed staging/upload must
+                # never point a new report at absent files. Hash-named assets can
+                # use size-only sync despite fresh local staging timestamps.
+                assets_command = command + ['s3', 'sync', str(stage), target, '--exclude', '*.html',
+                                            '--exclude', '*/taxonomy_index.json', '--exclude', '*/asset_manifest.json',
+                                            '--size-only', '--cache-control', 'no-store', '--no-progress']
+                subprocess.run(assets_command + (['--dryrun'] if args.dry_run else []), check=True)
+                publish_report(stage / current, command, args.bucket, args.prefix, args.dry_run)
+            # The temporary directory is removed before preparing the next sample.
+            completed += 1
+            print(f'{"Dry run complete" if args.dry_run else "Published"} {completed}/{len(reports)}: '
+                  f's3://{args.bucket}/{args.prefix.rstrip("/")}/{current}/', flush=True)
+    except OSError as exc:
+        if exc.errno not in (errno.ENOSPC, errno.EDQUOT):
+            raise
+        parser.exit(1, f'ERROR: Local staging ran out of disk space, inodes, or quota in {staging_parent}'
+                    + (f' while processing {current}' if current else '')
+                    + f'. {completed} sample(s) completed earlier in this attempt. '
+                      'Check df -h and df -i; rerun with --staging-dir on a filesystem with available capacity. '
+                      'Original sample outputs were not deleted.\n')
 
 
 if __name__ == '__main__':

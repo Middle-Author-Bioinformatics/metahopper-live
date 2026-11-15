@@ -1,5 +1,7 @@
 import importlib.util
 import csv
+import contextlib
+import io
 import hashlib
 import gzip
 import json
@@ -59,6 +61,18 @@ class PublishTests(unittest.TestCase):
             fcntl.flock(handle,fcntl.LOCK_EX|fcntl.LOCK_NB)
             with self.assertRaisesRegex(ValueError,'still running'):
                 with publish.idle_sample(self.root):pass
+
+    def test_missing_graphs_warn_while_fasta_and_report_assets_are_still_staged(self):
+        (self.root/'megahit/final.contigs.fa').unlink()
+        output = io.StringIO()
+        with contextlib.redirect_stdout(output):
+            destination = publish.prepare_sample(self.report,self.stage,'sample-bucket','reports/phoridae/',PIPELINE)
+        self.assertIn('no usable assembly graphs were imported', output.getvalue())
+        self.assertIn('preliminary_graph_unavailable_or_unmatched=1', output.getvalue())
+        self.assertIn('staged ', output.getvalue())
+        manifest = json.loads((destination/'asset_manifest.json').read_text())
+        self.assertIn('final/bins/genus/Test.fasta', manifest['files'])
+        self.assertFalse(any(path.endswith('.gfa') for path in manifest['files']))
     def test_manifest_injection_is_safe_and_replaces_an_old_manifest(self):
         html='<html><head></head><body></body></html>'
         result=publish.embed_manifest(html,{'sample':'</script><script>alert(1)</script>'})
