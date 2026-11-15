@@ -71,7 +71,8 @@ def publish_report(destination, command, bucket, prefix, dry_run=False):
         # permission is needed by the existing write-only publishing principal.
         response = subprocess.run(command + ['s3api', 'put-object', '--bucket', bucket, '--key', key, '--body', str(report),
                           '--content-type', 'text/html; charset=utf-8', '--metadata', 'metahopper-sha256=' + checksum,
-                          '--cache-control', 'no-store'], check=True, text=True, stdout=subprocess.PIPE)
+                          '--cache-control', 'no-store', '--output', 'json', '--no-cli-pager'],
+                          check=True, text=True, stdout=subprocess.PIPE)
     path = destination / 'taxonomy_index.json'
     if not path.is_file():
         print(destination.name + ': no taxonomy index; refresh this report with the updated generator to enable project search.', flush=True)
