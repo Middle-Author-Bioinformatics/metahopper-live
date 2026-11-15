@@ -4,20 +4,20 @@
 
 /* Self-hosted wordmark font; no external font requests. License: public/fonts/OFL.txt. */
 @font-face{font-family:"Space Grotesk";src:url('/fonts/SpaceGrotesk.ttf') format('truetype');font-style:normal;font-weight:300 700;font-display:swap}
-.topbar{display:grid;grid-template-columns:20vw minmax(180px,1fr) minmax(0,auto);align-items:center;padding:12px 22px;gap:clamp(16px,2vw,32px);border-bottom:1px solid var(--line);background:white}
+.topbar{display:grid;grid-template-columns:30vw minmax(0,1fr);align-items:start;padding:12px 22px;gap:clamp(16px,2vw,32px);border-bottom:1px solid var(--line);background:white}
 .mab-logo{display:block;width:100%;height:auto;object-fit:contain}
-.project-heading{display:flex;align-items:center;justify-self:end;min-width:0;max-width:100%}
+.company-heading{display:flex;flex-direction:column;align-items:flex-start;gap:8px;min-width:0}
+.project-heading{display:flex;flex-direction:column;align-items:flex-end;justify-self:end;gap:8px;min-width:0;max-width:100%}
 .project-picker{margin:0;min-width:180px;max-width:100%;min-height:44px;padding:10px 14px;font-size:16px;font-weight:600;background:#f8fafa;border-color:#c8d6d6}
 .project-name{font-size:16px;color:#607578;font-weight:500}
-.identity{display:flex;flex-direction:column;align-items:flex-end;gap:4px;min-width:0;max-width:100%}
 .metahopper-brand{display:flex;align-items:center;gap:3px;white-space:nowrap}
 .metahopper-brand h1{margin:0;font-family:"Space Grotesk",ui-sans-serif,system-ui,sans-serif;font-size:34px;line-height:1.1;font-weight:600;letter-spacing:-.055em;color:#303234}
 /* Crop the image's transparent side padding without altering the approved artwork. */
 .hopper-mark{display:block;width:44px;height:64px;object-fit:cover;object-position:center;filter:grayscale(1);flex:none}
-.account{display:flex;align-items:center;justify-content:flex-end;flex-wrap:wrap;gap:6px 12px;font-size:12px;line-height:1.4;color:#607578;min-width:0;max-width:100%}
-.account span{display:block;max-width:100%;overflow-wrap:anywhere;text-align:right}
+.account{display:flex;align-items:center;justify-content:flex-start;flex-wrap:wrap;gap:6px 12px;font-size:12px;line-height:1.4;color:#607578;min-width:0;max-width:100%}
+.account span{display:block;max-width:100%;overflow-wrap:anywhere;text-align:left}
 .account button{min-height:36px;white-space:nowrap}
-.login-heading>.mab-logo{width:20vw;min-width:180px;max-width:100%;margin:0 auto 18px}
+.login-heading>.mab-logo{width:30vw;min-width:180px;max-width:100%;margin:0 auto 18px}
 .login-heading .metahopper-brand{justify-content:center}
 @media(max-width:1000px){
   .topbar{gap:16px}
@@ -25,11 +25,7 @@
   .hopper-mark{width:40px;height:58px}
 }
 @media(max-width:760px){
-  .topbar{grid-template-columns:20vw minmax(0,1fr);align-items:start;padding:10px 12px;gap:10px 12px}
-  .topbar>.mab-logo{grid-column:1;grid-row:1}
-  .identity{grid-column:2;grid-row:1}
-  .project-heading{grid-column:1 / -1;grid-row:2;justify-self:stretch}
-  .project-heading:empty{display:none}
+  .topbar{grid-template-columns:30vw minmax(0,1fr);align-items:start;padding:10px 12px;gap:10px 12px}
   .project-picker{width:100%;min-width:0;min-height:44px;font-size:15px}
   .project-name{font-size:15px}
   .metahopper-brand{gap:2px}

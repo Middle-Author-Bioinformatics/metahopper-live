@@ -96,7 +96,7 @@ These live checks require your AWS deployment. Local build and browser tests do 
 
 ## Dashboard header
 
-The MAB logo occupies 20% of the viewport width on the left. The project selector sits beside the MetaHopper brand on desktop; the grayscale planthopper and tightly spaced Space Grotesk wordmark sit at the upper right, with the signed-in email and Sign out button beneath. On narrow screens, the selector moves to its own row and the account email wraps instead of disappearing. The sign-in and project-access screens use the same branding. The font is self-hosted in `public/fonts/` with its SIL Open Font License; no external font service is used.
+The MAB logo occupies 30% of the viewport width on the left, with the signed-in email and Sign out button directly beneath it. The grayscale planthopper and tightly spaced Space Grotesk wordmark sit at the upper right, with the project selector (or single-project name) beneath. The two header groups stay together on narrow screens, with the account email wrapping instead of disappearing. The sign-in and project-access screens use the same branding. The font is self-hosted in `public/fonts/` with its SIL Open Font License; no external font service is used.
 
 Sample search, sorting and scrollable tabs remain available. The redundant sample size/update strip and the generated report's top-level “bin set · rank(s) · built” subtitle are hidden. Subtitle styling is applied inside the isolated viewer, so existing S3 reports do not need to be regenerated or uploaded again. Report titles, section descriptions and biological data remain visible. Routine refresh controls stay hidden; connection errors retain Retry, and manual assignments still prevent automatic report replacement.
 
