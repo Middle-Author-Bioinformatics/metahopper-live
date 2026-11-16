@@ -8,6 +8,7 @@ import gzip
 import hashlib
 import json
 import math
+import os
 import pathlib
 import re
 import shutil
@@ -17,6 +18,13 @@ import tempfile
 
 # This is the viewer's in-memory limit, not an upload or download size limit.
 MAX_BUFFERED_ASSET_BYTES = 512 * 1024 * 1024
+
+
+def staging_directory(value):
+    if not value.strip():
+        raise argparse.ArgumentTypeError('staging directory cannot be empty; set the shell variable, '
+                                         'provide a directory path, or omit --staging-dir')
+    return pathlib.Path(value)
 
 
 def taxonomy_index(html, sample, stage):
@@ -71,10 +79,12 @@ def publish_report(destination, command, bucket, prefix, dry_run=False):
     else:
         # PutObject returns this upload's ETag directly. No GetObject/HeadObject
         # permission is needed by the existing write-only publishing principal.
+        # AWS_PAGER disables v2 paging without a CLI argument rejected by v1.
         response = subprocess.run(command + ['s3api', 'put-object', '--bucket', bucket, '--key', key, '--body', str(report),
                           '--content-type', 'text/html; charset=utf-8', '--metadata', 'metahopper-sha256=' + checksum,
-                          '--cache-control', 'no-store', '--output', 'json', '--no-cli-pager'],
-                          check=True, text=True, stdout=subprocess.PIPE)
+                          '--cache-control', 'no-store', '--output', 'json'],
+                          check=True, text=True, stdout=subprocess.PIPE,
+                          env=dict(os.environ, AWS_PAGER=''))
     path = destination / 'taxonomy_index.json'
     if not path.is_file():
         print(destination.name + ': no taxonomy index; refresh this report with the updated generator to enable project search.', flush=True)
@@ -359,7 +369,7 @@ def main():
     parser.add_argument('--pathways-dir', type=pathlib.Path, help='Optional sample-relative PathwayGenie results directory')
     parser.add_argument('--profile')
     parser.add_argument('--dry-run', action='store_true')
-    parser.add_argument('--staging-dir', type=pathlib.Path,
+    parser.add_argument('--staging-dir', type=staging_directory,
                         help='Temporary staging parent on a filesystem with free bytes and inodes; '
                              'only one sample is staged at a time (default: TMPDIR or system temporary directory)')
     args = parser.parse_args()
@@ -373,7 +383,7 @@ def main():
     if args.graph_max_nodes < 1 or args.megahit_max_links < 1:
         parser.error('Graph node and link limits must be positive')
     if not shutil.which('aws'):
-        parser.error('AWS CLI v2 must be installed and configured')
+        parser.error('AWS CLI (v1 or v2) must be installed and configured')
     reports = sorted(args.source.glob('*/metahopper_report.html'))
     if args.sample:
         reports = [p for p in reports if p.parent.name in set(args.sample)]
