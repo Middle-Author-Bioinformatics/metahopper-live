@@ -39,6 +39,17 @@ reports/phoridae/SPH1870/metahopper_report.html
 
 Use your existing AWS CLI credentials on TheBelly. A named `--profile` is optional; it is unrelated to dashboard client accounts. The supplied `scripts/belly-iam-policy.json` is an IAM identity-policy template for its publishing principal. Replace every bucket placeholder. It permits listing the three report prefixes and writing reports, with no read or delete permission. This publishing policy is for TheBelly, never client accounts; narrow it if a publisher should handle only one project. Use your normal AWS credential setup; never place AWS access keys in GitHub or frontend variables.
 
+AWS CLI v1 and v2 are supported. The publisher disables the v2 API-output pager
+using `AWS_PAGER=""` in the upload subprocess, without passing the v2-only
+`--no-cli-pager` argument. Existing credentials, profiles and other environment
+settings are preserved; installing another AWS CLI or changing Conda environments
+is not required for this compatibility fix.
+
+Compatibility validation: 33 publisher tests passed, including a strict v1-style
+subprocess parser and rejection of empty staging paths. The publisher-built
+PutObject command was also accepted by AWS CLI 1.46.3 against a stubbed S3 client;
+the previous `--no-cli-pager` command was rejected. No live S3 requests were made.
+
 Update your checkout on TheBelly with `git pull --ff-only`. The helper **requires `--prefix`**: it never guesses a destination from local folder names. It finds immediate sample folders and refreshes their reports from saved pipeline outputs. For each sample it stages the HTML and referenced FASTA, graph, annotation and pathway assets, uploads the assets before the report and taxonomy index, then removes that sample's temporary directory before preparing the next. It does not publish raw FASTQ reads or delete remote reports.
 
 ```bash
@@ -81,6 +92,10 @@ directory is removed and the error identifies the staging location and number
 of samples completed earlier in that attempt. Original sample outputs remain.
 The reusable staging parent can remain; each generated child directory is
 removed after its sample.
+
+An explicitly empty `--staging-dir ""` is rejected before staging or uploading.
+If using a shell variable for this argument, set it in the current shell first.
+Using an explicit directory path also avoids this issue across shell sessions.
 
 `staged ... target s3://...` is a local preparation summary. `Published N/M`
 confirms that the sample's assets, report and any available taxonomy index

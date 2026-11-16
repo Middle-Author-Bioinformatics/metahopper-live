@@ -46,7 +46,7 @@ class TaxonomyPublishTests(unittest.TestCase):
             self.assertEqual(len(calls), 2)
             self.assertIn('put-object', calls[0])
             self.assertEqual(calls[0][calls[0].index('--output') + 1], 'json')
-            self.assertIn('--no-cli-pager', calls[0])
+            self.assertNotIn('--no-cli-pager', calls[0])
             self.assertFalse(any('head-object' in cmd or 'get-object' in cmd for cmd in calls))
             self.assertIn('s3://sample-bucket/reports/aphrophora/Sample/taxonomy/' + 'a' * 32 + '-3.json', calls[1])
             self.assertIn('metahopper-sha256=' + checksum, calls[0])

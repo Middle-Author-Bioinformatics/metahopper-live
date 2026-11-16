@@ -120,6 +120,22 @@ class StagingTests(unittest.TestCase):
             self.assertEqual(call.args[1], ['aws', '--profile', 'publisher'])
         self.assertEqual(list(self.staging.iterdir()), [])
 
+    def test_empty_staging_argument_is_rejected_before_preparing_or_uploading(self):
+        for value in ('', '   '):
+            with self.subTest(value=value):
+                args = self.args[:]
+                args[args.index('--staging-dir') + 1] = value
+                error = io.StringIO()
+                with patch('sys.argv', args), contextlib.redirect_stderr(error), \
+                     patch.object(publish, 'prepare_sample') as prepare, \
+                     patch.object(publish.subprocess, 'run') as upload:
+                    with self.assertRaises(SystemExit) as raised:
+                        publish.main()
+                self.assertEqual(raised.exception.code, 2)
+                self.assertIn('cannot be empty', error.getvalue())
+                prepare.assert_not_called(); upload.assert_not_called()
+        self.assertFalse(self.staging.exists())
+
     def test_failed_asset_copy_removes_its_partial_file_without_touching_the_source(self):
         source = write(self.source / 'SPH0055/assembly.fasta', '>contig\nACGT\n')
         assets = self.root / 'assets'; assets.mkdir()
