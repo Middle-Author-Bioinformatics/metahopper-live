@@ -7,7 +7,7 @@ import type { Report } from './catalog';
 import ReportFrame from './ReportFrame';
 import Header, { MetaHopperBrand } from './Header';
 import TaxonomySearch from './TaxonomySearch';
-import type { BinFocus } from './taxonomy';
+import type { BinFocus, Rank } from './taxonomy';
 
 interface AccountProps { email: string; signOut?: () => void }
 interface DashboardProps extends AccountProps {
@@ -27,6 +27,7 @@ export function Dashboard({ email, signOut, project, projects, onProjectChange }
   const [checked, setChecked] = useState<Date>();
   const [refreshing, setRefreshing] = useState(false);
   const [binFocus, setBinFocus] = useState<{ path: string; target: BinFocus }>();
+  const [rank, setRank] = useState<Rank>('phylum');
   const mounted = useRef(false);
   const abort = useRef<AbortController | undefined>(undefined);
   const tabs = useRef<HTMLDivElement>(null);
@@ -87,8 +88,9 @@ export function Dashboard({ email, signOut, project, projects, onProjectChange }
   }, [editedPaths]);
 
   const selectTaxon = useCallback((report: Report, target: BinFocus) => {
-    setQuery(''); selectReport(report); setBinFocus({ path: report.path, target });
+    setQuery(''); setRank(target.rank); selectReport(report); setBinFocus({ path: report.path, target });
   }, [selectReport]);
+  const changeRank = useCallback((value: Rank) => { setRank(value); setBinFocus(undefined); }, []);
 
   useEffect(() => {
     if (!checked) return;
@@ -153,13 +155,13 @@ export function Dashboard({ email, signOut, project, projects, onProjectChange }
         : <span className="project-name">{project.name}</span>}
     </Header>
     <div className="catalog-bar"><div className="sample-title"><strong>Samples</strong><span className="count">{reports.length}</span></div><input type="search" aria-label="Find a sample" placeholder="Find a sample…" value={query} onChange={(e) => setQuery(e.target.value)} /><select aria-label="Sort samples" value={sort} onChange={(e) => setSort(e.target.value)}><option value="name">Sample name</option><option value="updated">Recently updated</option></select></div>
-    <TaxonomySearch project={project} reports={reports} onSelect={selectTaxon} />
+    <TaxonomySearch project={project} reports={reports} onSelect={selectTaxon} rank={rank} onRankChange={changeRank} />
     {error && <div className="notice error" role="alert">Unable to load the current sample list. Check your connection or contact your administrator if this persists. <button onClick={() => void refresh()} disabled={refreshing}>Retry</button></div>}
     <div className="tabs-wrap"><button className="scroll-arrow" aria-label="Scroll samples left" onClick={() => tabs.current?.scrollBy({ left: -320, behavior: 'smooth' })}>‹</button><div className="sample-tabs" ref={tabs} role="tablist" aria-label="Samples">{visible.map((report, i) => <button key={report.path} role="tab" aria-selected={selected === report.path} aria-controls={`panel-${encodeURIComponent(report.sample)}`} tabIndex={selected === report.path || (!visible.some((item) => item.path === selected) && i === 0) ? 0 : -1} onClick={() => selectReport(report)} onKeyDown={(e) => navigate(e, i)}>{report.sample}{!byPath.has(report.path) && <small>removed</small>}{editedPaths.has(report.path) && <span title="Manual assignments in this tab" aria-label="Manual assignments"> •</span>}</button>)}</div><button className="scroll-arrow" aria-label="Scroll samples right" onClick={() => tabs.current?.scrollBy({ left: 320, behavior: 'smooth' })}>›</button></div>
     {query && !visible.length && <div className="notice">No sample matches “{query}”. <button onClick={() => setQuery('')}>Clear search</button></div>}
     <main className="workspace">
       {!selected && <div className="empty"><div className="empty-icon">M</div><h2>{error ? 'Reports unavailable' : checked ? 'Waiting for reports' : 'Finding your samples…'}</h2><p>{error ? 'Use Retry above to try again.' : checked ? 'Completed reports will appear here automatically.' : 'Connecting to your project.'}</p></div>}
-      {cache.map((cached) => <ReportFrame key={cached.path} report={byPath.get(cached.path) ?? cached} active={selected === cached.path} removed={!byPath.has(cached.path)} onEdited={onEdited} binFocus={binFocus?.path === cached.path ? binFocus.target : undefined} />)}
+      {cache.map((cached) => <ReportFrame key={cached.path} report={byPath.get(cached.path) ?? cached} active={selected === cached.path} removed={!byPath.has(cached.path)} onEdited={onEdited} rank={rank} binFocus={binFocus?.path === cached.path ? binFocus.target : undefined} />)}
     </main>
   </div>;
 }

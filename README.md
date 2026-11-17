@@ -123,7 +123,9 @@ For periodic publication, use cron or a systemd timer on TheBelly to run the sam
 - A failed listing retains the last known sample list and visibly reports the error. A Retry button appears when it is needed. A failed HTML download has its own Retry button.
 - Reports update in the background. A report with manual assignments stays protected until the user chooses to replace it; discovery of new samples continues.
 
-The supplied report's rank controls, bin tables, plots, local FASTA selection, and downloads remain inside the report. Reports are isolated in sandboxed frames without access to the parent login credentials. External scripts, subresources, and fetch requests from report HTML are blocked, so this version expects self-contained reports like the supplied file. External assets or relative-file dependencies would need a deliberate extension.
+One dashboard **Taxonomic rank** selector controls cross-sample search, the active sample's bin table and both assembly plots. It starts at Phylum, persists while switching samples, and hides duplicate rank controls inside the report. A rank not produced for a sample shows no bins instead of silently showing another rank. Standalone reports retain their own rank selector. Gene and pathway annotations retain their actual annotated rank. The secure parent/frame channel carries only the selected rank; it grants no additional data access.
+
+The bin tables, plots, local FASTA selection, and downloads remain inside the report. Reports are isolated in sandboxed frames without access to the parent login credentials. External scripts, subresources, and fetch requests from report HTML are blocked, so this version expects self-contained reports like the supplied file. External assets or relative-file dependencies would need a deliberate extension.
 
 Manual bin assignments remain local to that open browser tab. They are not saved to S3. This version detects assignments using the supplied MetaHopper report's `#exp` export button; changes in a future generator may require updating `src/frame.ts`. Exported assignments keep the tab protected until a deliberate reload or sign-out. The report-update warning asks before discarding them. Browser close warnings are best-effort; always export work you want to retain.
 
@@ -230,7 +232,8 @@ No AWS resources were provisioned, no invitations sent, and no report data publi
 The dashboard's **Search taxa across samples** field searches bin names within
 the selected project. It shows the sample, matched rank, bin size, contig count,
 N50, completeness and contamination. Click a result to open and highlight that
-bin in its sample report. Results can be filtered by rank and paged; missing
+bin in its sample report. The shared Taxonomic rank selector filters both these
+results and the sample report's bins/plots. Results can be paged; missing
 quality values appear as a dash. Domain assignments such as
 `unclassified_Bacteria` remain searchable; generic unbinned buckets do not.
 

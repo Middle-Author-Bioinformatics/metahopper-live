@@ -112,3 +112,35 @@ test('focus-bin messages require the exact frame channel and parent window', () 
   events.message({ source: parent, data }); events.message({ source: parent, data });
   assert.equal(clicked, 1); assert.equal(scrolled, 1); assert.equal(search.value, 'Sodalis_test');
 });
+
+test('one authenticated parent rank controls the report, including ranks missing from a sample', () => {
+  const html = isolatedReport('<html><head></head><body></body></html>', 'channel');
+  const script = html.match(/<script>([\s\S]*?)<\/script>/)![1];
+  const events: Record<string, (event: any) => void> = {};
+  const parent = {}, changes: string[] = [], classes: string[] = [];
+  let hidden = false;
+  const rank = { value: 'phylum', options: [{ value: 'phylum' }],
+    appendChild(option: { value: string }) { this.options.push(option); },
+    dispatchEvent() { changes.push(this.value); },
+    parentElement: { setAttribute() { hidden = true; } },
+  };
+  vm.runInNewContext(script, { parent, window: {}, Map, Set, JSON, Event,
+    addEventListener: (name: string, callback: (event: any) => void) => { events[name] = callback; },
+    document: { getElementById: () => rank, createElement: () => ({}),
+      body: { classList: { add: (value: string) => classes.push(value) } } },
+  });
+  const data = { channel: 'channel', type: 'set-report-rank', rank: 'genus' };
+  events.message({ source: {}, data });
+  events.message({ source: parent, data: { ...data, channel: 'wrong' } });
+  events.message({ source: parent, data: { ...data, rank: 'all' } });
+  assert.deepEqual(changes, []); assert.equal(hidden, false);
+  events.message({ source: parent, data });
+  assert.equal(rank.value, 'genus'); assert.deepEqual(changes, ['genus']);
+  assert.equal(rank.options.length, 2); assert.equal(hidden, true);
+  assert.deepEqual(classes, ['mh-shared-rank']);
+  events.message({ source: parent, data: { ...data, rank: 'species' } });
+  events.message({ source: parent, data: { ...data, rank: 'genus' } });
+  assert.deepEqual(changes, ['genus', 'species', 'genus']);
+  assert.equal(rank.options.length, 3, 'rank changes must not add duplicate options');
+  assert(html.includes('body.mh-shared-rank #bin-rank-control'));
+});

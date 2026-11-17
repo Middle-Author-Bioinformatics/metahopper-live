@@ -11,6 +11,7 @@
 .taxonomy-controls .taxonomy-query{flex:1;max-width:540px;min-width:240px}
 .taxonomy-query input{width:100%;font-weight:400}
 .taxonomy-controls select{min-width:130px}
+.taxonomy-rank-help{font-size:11px;color:#617779;margin:8px 0 0;line-height:1.4}
 .taxonomy-clear{min-height:41px}
 .taxonomy-scope{margin:0 0 12px auto;color:#607578;font-size:12px}
 .taxonomy-status{font-size:13px;color:#607578;margin:15px 0 10px}
