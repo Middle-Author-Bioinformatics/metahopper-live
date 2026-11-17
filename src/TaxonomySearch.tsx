@@ -2,19 +2,20 @@ import { useEffect, useRef, useState } from 'react';
 import type { Project } from '../project';
 import type { Report } from './catalog';
 import { readTaxonomyIndex } from './storage';
-import { loadTaxonomy, searchTaxonomy, sizeLabel, TAXONOMY_RANKS, type BinFocus, type TaxonomyIndex } from './taxonomy';
+import { loadTaxonomy, searchTaxonomy, sizeLabel, TAXONOMY_RANKS, type BinFocus, type TaxonomyIndex, type Rank } from './taxonomy';
 
 interface Props {
   project: Project; reports: Report[];
   onSelect: (report: Report, bin: BinFocus) => void;
+  rank: Rank;
+  onRankChange: (rank: Rank) => void;
 }
 type Entry = { version: string; index: TaxonomyIndex };
 const PAGE_SIZE = 30;
 const numeric = (value: number | null, digits = 0) => value === null ? '—' : value.toLocaleString(undefined, { maximumFractionDigits: digits });
 
-export default function TaxonomySearch({ project, reports, onSelect }: Props) {
+export default function TaxonomySearch({ project, reports, onSelect, rank, onRankChange }: Props) {
   const [query, setQuery] = useState('');
-  const [rank, setRank] = useState('all');
   const [indexes, setIndexes] = useState(new Map<string, Entry>());
   const [failed, setFailed] = useState(new Set<string>());
   const [loading, setLoading] = useState(false);
@@ -56,11 +57,12 @@ export default function TaxonomySearch({ project, reports, onSelect }: Props) {
       <label className="taxonomy-query">Search taxa across samples
         <input type="search" value={query} onChange={(e) => { setQuery(e.target.value); setExpanded(true); }} placeholder="e.g. Wolbachia or Pseudomonadota" />
       </label>
-      <label>Rank<select value={rank} onChange={(e) => setRank(e.target.value)}><option value="all">All ranks</option>{TAXONOMY_RANKS.map((r) => <option key={r} value={r}>{r[0].toUpperCase() + r.slice(1)}</option>)}</select></label>
+      <label>Taxonomic rank<select value={rank} onChange={(e) => onRankChange(e.target.value as Rank)} aria-describedby="shared-rank-help">{TAXONOMY_RANKS.map((r) => <option key={r} value={r}>{r[0].toUpperCase() + r.slice(1)}</option>)}</select></label>
       {active && <button className="taxonomy-clear" onClick={() => setQuery('')}>Clear</button>}
       {active && <button className="taxonomy-clear" onClick={() => setExpanded((value) => !value)} aria-expanded={expanded}>{expanded ? 'Hide results' : 'Show results'}</button>}
       <p className="taxonomy-scope">{project.name} · {reports.length} samples</p>
     </div>
+    <p className="taxonomy-rank-help" id="shared-rank-help">One rank controls this search, the sample bin table, and both assembly plots. Gene and pathway annotations show the rank that was annotated.</p>
     {active && expanded && <>
       <p className="taxonomy-status" role="status" aria-live="polite">
         <strong>{matches.length.toLocaleString()} matching bins</strong> in {sampleCount} samples · {indexed}/{reports.length} samples indexed{loading ? ' · Loading indexes…' : ''}

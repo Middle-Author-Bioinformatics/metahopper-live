@@ -5,13 +5,27 @@ export function isolatedReport(html: string, channel: string): string {
   const csp = `<meta http-equiv="Content-Security-Policy" content="default-src 'none'; script-src 'unsafe-inline'; style-src 'unsafe-inline'; img-src data: blob:; font-src data:; connect-src 'none'; object-src 'none'; base-uri 'none'; form-action 'none'">`;
   // Hide only the generator's top-level build subtitle, including in reports
   // already uploaded to S3. Keep section descriptions, data and source HTML intact.
-  const presentation = `<style data-metahopper-viewer>body > .wrap > header > h1 + p.sub { display: none !important; }#bin-table tr.mh-search-target td{background:#e2f0f2;box-shadow:inset 0 2px #207b86,inset 0 -2px #207b86}</style>`;
+  const presentation = `<style data-metahopper-viewer>body > .wrap > header > h1 + p.sub { display: none !important; }#bin-table tr.mh-search-target td{background:#e2f0f2;box-shadow:inset 0 2px #207b86,inset 0 -2px #207b86}body.mh-shared-rank #bin-rank-control,body.mh-shared-rank [data-shared-rank-control],body.mh-shared-rank .bin-figure-controls{display:none!important}</style>`;
   const safeChannel = JSON.stringify(channel).replace(/</g, '\\u003c');
   const bridge = `<script>
   (() => {
     const channel = ${safeChannel};
     const pending = new Map(); let serial = 0;
     let lastFocus = '';
+    function setReportRank(value) {
+      if (!['phylum','class','order','family','genus','species'].includes(value)) return;
+      const select = document.getElementById('rank-filter');
+      if (!select) return;
+      // A missing rank must display an empty selection, never another rank's bins.
+      if (![...select.options].some(option => option.value === value)) {
+        const option = document.createElement('option'); option.value = value;
+        option.textContent = value[0].toUpperCase() + value.slice(1) + ' (not produced)';
+        select.appendChild(option);
+      }
+      select.value = value; select.dispatchEvent(new Event('change'));
+      select.parentElement?.setAttribute('data-shared-rank-control', '');
+      document.body.classList.add('mh-shared-rank');
+    }
     function focusBin(data) {
       if (typeof data.bin !== 'string' || data.bin.length > 1000 || !['phylum','class','order','family','genus','species'].includes(data.rank)) return;
       const key = JSON.stringify([data.rank, data.bin, data.request]);
@@ -49,6 +63,7 @@ export function isolatedReport(html: string, channel: string): string {
         if (typeof window.__draw === 'function') window.__draw();
       }
       if (event.source === parent && event.data?.channel === channel && event.data.type === 'focus-bin') focusBin(event.data);
+      if (event.source === parent && event.data?.channel === channel && event.data.type === 'set-report-rank') setReportRank(event.data.rank);
     });
     addEventListener('DOMContentLoaded', () => {
       document.addEventListener('click', async event => {
