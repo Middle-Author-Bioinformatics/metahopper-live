@@ -57,7 +57,7 @@ export default function TaxonomySearch({ project, reports, onSelect, rank, onRan
       <label className="taxonomy-query">Search taxa across samples
         <input type="search" value={query} onChange={(e) => { setQuery(e.target.value); setExpanded(true); }} placeholder="e.g. Wolbachia or Pseudomonadota" />
       </label>
-      <label>Taxonomic rank<select value={rank} onChange={(e) => onRankChange(e.target.value as Rank)} aria-describedby="shared-rank-help">{TAXONOMY_RANKS.map((r) => <option key={r} value={r}>{r[0].toUpperCase() + r.slice(1)}</option>)}</select></label>
+      <label>Taxonomic rank<select value={rank} onChange={(e) => onRankChange(e.target.value as Rank)} aria-describedby="shared-rank-help" title="Controls taxonomic search, the sample bin table and both assembly plots. Gene and pathway annotations retain their annotated rank.">{TAXONOMY_RANKS.map((r) => <option key={r} value={r}>{r[0].toUpperCase() + r.slice(1)}</option>)}</select></label>
       {active && <button className="taxonomy-clear" onClick={() => setQuery('')}>Clear</button>}
       {active && <button className="taxonomy-clear" onClick={() => setExpanded((value) => !value)} aria-expanded={expanded}>{expanded ? 'Hide results' : 'Show results'}</button>}
       <p className="taxonomy-scope">{project.name} · {reports.length} samples</p>

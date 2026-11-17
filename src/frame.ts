@@ -3,9 +3,20 @@
 export function isolatedReport(html: string, channel: string): string {
   if (!/<head\b[^>]*>/i.test(html)) throw new Error('Expected a complete MetaHopper HTML report.');
   const csp = `<meta http-equiv="Content-Security-Policy" content="default-src 'none'; script-src 'unsafe-inline'; style-src 'unsafe-inline'; img-src data: blob:; font-src data:; connect-src 'none'; object-src 'none'; base-uri 'none'; form-action 'none'">`;
-  // Hide only the generator's top-level build subtitle, including in reports
-  // already uploaded to S3. Keep section descriptions, data and source HTML intact.
-  const presentation = `<style data-metahopper-viewer>body > .wrap > header > h1 + p.sub { display: none !important; }#bin-table tr.mh-search-target td{background:#e2f0f2;box-shadow:inset 0 2px #207b86,inset 0 -2px #207b86}body.mh-shared-rank #bin-rank-control,body.mh-shared-rank [data-shared-rank-control],body.mh-shared-rank .bin-figure-controls{display:none!important}</style>`;
+  // Compact the viewer presentation, including reports already uploaded to S3.
+  // Preserve report content and standalone source HTML.
+  const presentation = `<style data-metahopper-viewer>
+body > .wrap{padding-top:12px}
+body > .wrap > header > h1{font-size:1.3rem;line-height:1.25}
+body > .wrap > header > h1 + p.sub{display:none!important}
+#tabs.tabs{margin:10px 0;gap:5px}
+#tabs > .tab{padding:6px 11px;font-size:.84rem;line-height:1.35}
+#pane-bins > .card:first-child{padding:12px 14px}
+#pane-bins > .card:first-child > .row:first-child{margin-bottom:8px!important}
+#pane-bins > .card:first-child > p.note{margin:6px 0}
+#bin-table tr.mh-search-target td{background:#e2f0f2;box-shadow:inset 0 2px #207b86,inset 0 -2px #207b86}
+body.mh-shared-rank #bin-rank-control,body.mh-shared-rank [data-shared-rank-control],body.mh-shared-rank .bin-figure-controls{display:none!important}
+</style>`;
   const safeChannel = JSON.stringify(channel).replace(/</g, '\\u003c');
   const bridge = `<script>
   (() => {
