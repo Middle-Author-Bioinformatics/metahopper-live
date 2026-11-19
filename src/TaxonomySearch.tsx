@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useRef, useState, type ReactNode } from 'react';
 import type { Project } from '../project';
 import type { Report } from './catalog';
 import { readTaxonomyIndex } from './storage';
@@ -9,12 +9,13 @@ interface Props {
   onSelect: (report: Report, bin: BinFocus) => void;
   rank: Rank;
   onRankChange: (rank: Rank) => void;
+  sampleControls?: ReactNode;
 }
 type Entry = { version: string; index: TaxonomyIndex };
 const PAGE_SIZE = 30;
 const numeric = (value: number | null, digits = 0) => value === null ? '—' : value.toLocaleString(undefined, { maximumFractionDigits: digits });
 
-export default function TaxonomySearch({ project, reports, onSelect, rank, onRankChange }: Props) {
+export default function TaxonomySearch({ project, reports, onSelect, rank, onRankChange, sampleControls }: Props) {
   const [query, setQuery] = useState('');
   const [indexes, setIndexes] = useState(new Map<string, Entry>());
   const [failed, setFailed] = useState(new Set<string>());
@@ -52,17 +53,16 @@ export default function TaxonomySearch({ project, reports, onSelect, rank, onRan
   const currentPage = Math.min(page, Math.max(0, pages - 1));
   const sampleCount = new Set(matches.map((m) => m.report.path)).size;
 
-  return <section className="taxonomy-search" aria-label="Taxonomic search across samples">
+  return <section className="taxonomy-search" aria-label="Sample and taxon search">
     <div className="taxonomy-controls">
+      {sampleControls}
       <label className="taxonomy-query">Search taxa across samples
         <input type="search" value={query} onChange={(e) => { setQuery(e.target.value); setExpanded(true); }} placeholder="e.g. Wolbachia or Pseudomonadota" />
       </label>
-      <label>Taxonomic rank<select value={rank} onChange={(e) => onRankChange(e.target.value as Rank)} aria-describedby="shared-rank-help" title="Controls taxonomic search, the sample bin table and both assembly plots. Gene and pathway annotations retain their annotated rank.">{TAXONOMY_RANKS.map((r) => <option key={r} value={r}>{r[0].toUpperCase() + r.slice(1)}</option>)}</select></label>
+      <label>Taxonomic rank<select value={rank} onChange={(e) => onRankChange(e.target.value as Rank)} title="Search, bins and assembly plots">{TAXONOMY_RANKS.map((r) => <option key={r} value={r}>{r[0].toUpperCase() + r.slice(1)}</option>)}</select></label>
       {active && <button className="taxonomy-clear" onClick={() => setQuery('')}>Clear</button>}
       {active && <button className="taxonomy-clear" onClick={() => setExpanded((value) => !value)} aria-expanded={expanded}>{expanded ? 'Hide results' : 'Show results'}</button>}
-      <p className="taxonomy-scope">{project.name} · {reports.length} samples</p>
     </div>
-    <p className="taxonomy-rank-help" id="shared-rank-help">One rank controls this search, the sample bin table, and both assembly plots. Gene and pathway annotations show the rank that was annotated.</p>
     {active && expanded && <>
       <p className="taxonomy-status" role="status" aria-live="polite">
         <strong>{matches.length.toLocaleString()} matching bins</strong> in {sampleCount} samples · {indexed}/{reports.length} samples indexed{loading ? ' · Loading indexes…' : ''}
@@ -76,8 +76,8 @@ export default function TaxonomySearch({ project, reports, onSelect, rank, onRan
             <td>{bin.rank}</td><td>{sizeLabel(bin.total_length_bp)}</td><td>{numeric(bin.num_contigs)}</td><td>{sizeLabel(bin.N50)}</td><td>{numeric(bin.completeness_percent, 2)}</td><td>{numeric(bin.contamination_percent, 2)}</td>
           </tr>)}
         </tbody></table></div>
-        <div className="taxonomy-pagination"><span>Open a taxonomic bin to view its sample report. Missing quality values appear as —.</span>{pages > 1 && <div><button disabled={currentPage === 0} onClick={() => setPage(currentPage - 1)}>Previous</button><span>{currentPage + 1} / {pages}</span><button disabled={currentPage + 1 >= pages} onClick={() => setPage(currentPage + 1)}>Next</button></div>}</div>
-      </> : <p className="taxonomy-empty">{loading ? 'Searching the available sample indexes…' : indexed ? 'No matching bins in the indexed samples. Try a shorter name or another rank.' : 'Republish reports with the updated publisher to enable this search.'}</p>}
+        {pages > 1 && <div className="taxonomy-pagination"><button disabled={currentPage === 0} onClick={() => setPage(currentPage - 1)}>Previous</button><span>{currentPage + 1} / {pages}</span><button disabled={currentPage + 1 >= pages} onClick={() => setPage(currentPage + 1)}>Next</button></div>}
+      </> : <p className="taxonomy-empty">{loading ? 'Searching…' : indexed ? 'No matching bins.' : 'Search indexes unavailable. Republish these reports.'}</p>}
     </>}
   </section>;
 }

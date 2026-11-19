@@ -1,11 +1,15 @@
 // Reports contain JavaScript. Isolate them from Cognito credentials and the app DOM.
 // Deliberately pair this CSP with a sandbox that omits allow-same-origin.
-export function isolatedReport(html: string, channel: string): string {
+import { reportTheme } from './report-theme.ts';
+import type { Theme } from './theme';
+
+export function isolatedReport(html: string, channel: string, theme: Theme = 'light'): string {
   if (!/<head\b[^>]*>/i.test(html)) throw new Error('Expected a complete MetaHopper HTML report.');
   const csp = `<meta http-equiv="Content-Security-Policy" content="default-src 'none'; script-src 'unsafe-inline'; style-src 'unsafe-inline'; img-src data: blob:; font-src data:; connect-src 'none'; object-src 'none'; base-uri 'none'; form-action 'none'">`;
   // Compact the viewer presentation, including reports already uploaded to S3.
   // Preserve report content and standalone source HTML.
   const presentation = `<style data-metahopper-viewer>
+${reportTheme}
 body > .wrap{padding-top:12px}
 body > .wrap > header > h1{font-size:1.3rem;line-height:1.25}
 body > .wrap > header > h1 + p.sub{display:none!important}
@@ -14,8 +18,9 @@ body > .wrap > header > h1 + p.sub{display:none!important}
 #pane-bins > .card:first-child{padding:12px 14px}
 #pane-bins > .card:first-child > .row:first-child{margin-bottom:8px!important}
 #pane-bins > .card:first-child > p.note{margin:6px 0}
-#bin-table tr.mh-search-target td{background:#e2f0f2;box-shadow:inset 0 2px #207b86,inset 0 -2px #207b86}
+#bin-table tr.mh-search-target td{background:var(--selection);box-shadow:inset 0 2px var(--acc),inset 0 -2px var(--acc)}
 body.mh-shared-rank #bin-rank-control,body.mh-shared-rank [data-shared-rank-control],body.mh-shared-rank .bin-figure-controls{display:none!important}
+#bin-search-help,#annotation-browser>.annotation-help:not([role="status"]),#pathway-browser>p.note:not([id]),#pathway-hits-card>p.note:not([id]){display:none!important}
 </style>`;
   const safeChannel = JSON.stringify(channel).replace(/</g, '\\u003c');
   const bridge = `<script>
@@ -23,6 +28,15 @@ body.mh-shared-rank #bin-rank-control,body.mh-shared-rank [data-shared-rank-cont
     const channel = ${safeChannel};
     const pending = new Map(); let serial = 0;
     let lastFocus = '';
+    function setTheme(value) {
+      if (value !== 'light' && value !== 'dark') return;
+      const root = document.documentElement;
+      if (!root) return;
+      root.dataset.theme = value;
+      root.setAttribute('data-theme-manual', 'true');
+      if (typeof window.__draw === 'function') window.__draw();
+    }
+    if (typeof document !== 'undefined' && document.documentElement) setTheme(${JSON.stringify(theme === 'dark' ? 'dark' : 'light')});
     function setReportRank(value) {
       if (!['phylum','class','order','family','genus','species'].includes(value)) return;
       const select = document.getElementById('rank-filter');
@@ -75,6 +89,7 @@ body.mh-shared-rank #bin-rank-control,body.mh-shared-rank [data-shared-rank-cont
       }
       if (event.source === parent && event.data?.channel === channel && event.data.type === 'focus-bin') focusBin(event.data);
       if (event.source === parent && event.data?.channel === channel && event.data.type === 'set-report-rank') setReportRank(event.data.rank);
+      if (event.source === parent && event.data?.channel === channel && event.data.type === 'set-theme') setTheme(event.data.theme);
     });
     addEventListener('DOMContentLoaded', () => {
       document.addEventListener('click', async event => {

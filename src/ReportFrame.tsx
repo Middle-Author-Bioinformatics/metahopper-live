@@ -4,16 +4,20 @@ import { isolatedReport } from './frame';
 import { downloadReportAsset, readReport, readReportAsset } from './storage';
 import { assetManifest, type AssetManifest } from './assets';
 import type { BinFocus, Rank } from './taxonomy';
+import type { Theme } from './theme';
 
 interface Props {
   report: Report; active: boolean; removed: boolean;
   onEdited: (path: string, edited: boolean) => void;
   binFocus?: BinFocus;
   rank: Rank;
+  theme: Theme;
 }
-export default function ReportFrame({ report, active, removed, onEdited, binFocus, rank }: Props) {
+export default function ReportFrame({ report, active, removed, onEdited, binFocus, rank, theme }: Props) {
   const frame = useRef<HTMLIFrameElement>(null);
   const channel = useRef(crypto.randomUUID());
+  const themeRef = useRef(theme);
+  themeRef.current = theme;
   const [loaded, setLoaded] = useState<{ version: string; html: string; manifest: AssetManifest | null }>();
   const [edited, setEdited] = useState(false);
   const [error, setError] = useState(false);
@@ -59,7 +63,7 @@ export default function ReportFrame({ report, active, removed, onEdited, binFocu
     setError(false);
     void readReport(report.path, controller.signal).then((html) => {
       if (controller.signal.aborted) return;
-      const isolated = isolatedReport(html, channel.current);
+      const isolated = isolatedReport(html, channel.current, themeRef.current);
       setBusy(false);
       setLoaded({ version: report.version, html: isolated, manifest: assetManifest(html) });
     }).catch(() => {
@@ -71,11 +75,15 @@ export default function ReportFrame({ report, active, removed, onEdited, binFocu
   }, [report.path, report.version, loaded?.version, edited, retry, removed, active]);
 
   function resizeFrame() {
+    frame.current?.contentWindow?.postMessage({ channel: channel.current, type: 'set-theme', theme }, '*');
     frame.current?.contentWindow?.postMessage({ channel: channel.current, type: 'resize' }, '*');
     if (active) frame.current?.contentWindow?.postMessage({ channel: channel.current, type: 'set-report-rank', rank }, '*');
     if (active && binFocus) frame.current?.contentWindow?.postMessage({ channel: channel.current, type: 'focus-bin', ...binFocus }, '*');
   }
   useEffect(() => { if (active) resizeFrame(); }, [active, loaded?.version, binFocus, rank]);
+  useEffect(() => {
+    frame.current?.contentWindow?.postMessage({ channel: channel.current, type: 'set-theme', theme }, '*');
+  }, [theme]);
 
   function reload() {
     if (edited && !window.confirm('Reloading clears the manual bin assignments in this tab. Export them from the report before continuing. Reload now?')) return;

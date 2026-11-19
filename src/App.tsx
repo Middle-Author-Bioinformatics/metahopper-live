@@ -8,6 +8,7 @@ import ReportFrame from './ReportFrame';
 import Header, { MetaHopperBrand } from './Header';
 import TaxonomySearch from './TaxonomySearch';
 import type { BinFocus, Rank } from './taxonomy';
+import { ThemeProvider, useTheme } from './ThemeProvider';
 
 interface AccountProps { email: string; signOut?: () => void }
 interface DashboardProps extends AccountProps {
@@ -17,6 +18,7 @@ interface DashboardProps extends AccountProps {
 }
 
 export function Dashboard({ email, signOut, project, projects, onProjectChange }: DashboardProps) {
+  const { theme } = useTheme();
   const [reports, setReports] = useState<Report[]>([]);
   const [cache, setCache] = useState<Report[]>([]);
   const [selected, setSelected] = useState('');
@@ -154,14 +156,16 @@ export function Dashboard({ email, signOut, project, projects, onProjectChange }
         ? <select className="project-picker" aria-label="Project" value={project.id} onChange={(event) => switchProject(event.target.value)}>{projects.map((item) => <option key={item.id} value={item.id}>{item.name}</option>)}</select>
         : <span className="project-name">{project.name}</span>}
     </Header>
-    <div className="catalog-bar"><div className="sample-title"><strong>Samples</strong><span className="count">{reports.length}</span></div><input type="search" aria-label="Find a sample" placeholder="Find a sample…" value={query} onChange={(e) => setQuery(e.target.value)} /><select aria-label="Sort samples" value={sort} onChange={(e) => setSort(e.target.value)}><option value="name">Sample name</option><option value="updated">Recently updated</option></select></div>
-    <TaxonomySearch project={project} reports={reports} onSelect={selectTaxon} rank={rank} onRankChange={changeRank} />
+    <TaxonomySearch project={project} reports={reports} onSelect={selectTaxon} rank={rank} onRankChange={changeRank} sampleControls={<>
+      <label className="sample-query"><span>Samples <span className="count">{reports.length}</span></span><input type="search" aria-label="Find a sample" placeholder="Find a sample…" value={query} onChange={(e) => setQuery(e.target.value)} /></label>
+      <label className="sample-sort">Sort<select aria-label="Sort samples" value={sort} onChange={(e) => setSort(e.target.value)}><option value="name">Sample name</option><option value="updated">Recently updated</option></select></label>
+    </>} />
     {error && <div className="notice error" role="alert">Unable to load the current sample list. Check your connection or contact your administrator if this persists. <button onClick={() => void refresh()} disabled={refreshing}>Retry</button></div>}
     <div className="tabs-wrap"><button className="scroll-arrow" aria-label="Scroll samples left" onClick={() => tabs.current?.scrollBy({ left: -320, behavior: 'smooth' })}>‹</button><div className="sample-tabs" ref={tabs} role="tablist" aria-label="Samples">{visible.map((report, i) => <button key={report.path} role="tab" aria-selected={selected === report.path} aria-controls={`panel-${encodeURIComponent(report.sample)}`} tabIndex={selected === report.path || (!visible.some((item) => item.path === selected) && i === 0) ? 0 : -1} onClick={() => selectReport(report)} onKeyDown={(e) => navigate(e, i)}>{report.sample}{!byPath.has(report.path) && <small>removed</small>}{editedPaths.has(report.path) && <span title="Manual assignments in this tab" aria-label="Manual assignments"> •</span>}</button>)}</div><button className="scroll-arrow" aria-label="Scroll samples right" onClick={() => tabs.current?.scrollBy({ left: 320, behavior: 'smooth' })}>›</button></div>
     {query && !visible.length && <div className="notice">No sample matches “{query}”. <button onClick={() => setQuery('')}>Clear search</button></div>}
     <main className="workspace">
       {!selected && <div className="empty"><div className="empty-icon">M</div><h2>{error ? 'Reports unavailable' : checked ? 'Waiting for reports' : 'Finding your samples…'}</h2><p>{error ? 'Use Retry above to try again.' : checked ? 'Completed reports will appear here automatically.' : 'Connecting to your project.'}</p></div>}
-      {cache.map((cached) => <ReportFrame key={cached.path} report={byPath.get(cached.path) ?? cached} active={selected === cached.path} removed={!byPath.has(cached.path)} onEdited={onEdited} rank={rank} binFocus={binFocus?.path === cached.path ? binFocus.target : undefined} />)}
+      {cache.map((cached) => <ReportFrame key={cached.path} report={byPath.get(cached.path) ?? cached} active={selected === cached.path} removed={!byPath.has(cached.path)} onEdited={onEdited} rank={rank} theme={theme} binFocus={binFocus?.path === cached.path ? binFocus.target : undefined} />)}
     </main>
   </div>;
 }
@@ -195,8 +199,8 @@ export function ProjectSession({ email, signOut }: AccountProps) {
 }
 
 export default function App() {
-  return <Authenticator hideSignUp components={{ Header: () => <div className="login-heading"><img className="mab-logo" src="/mab-logo.png" alt="Middle Author Bioinformatics" /><MetaHopperBrand /><p>Sign in to explore your project.</p></div> }}>
+  return <ThemeProvider><Authenticator hideSignUp components={{ Header: () => <div className="login-heading"><img className="mab-logo" src="/mab-logo.png" alt="Middle Author Bioinformatics" /><MetaHopperBrand /></div> }}>
     {({ user, signOut }) => <ProjectSession key={user?.userId} email={user?.signInDetails?.loginId ?? user?.username ?? ''} signOut={signOut} />}
-  </Authenticator>;
+  </Authenticator></ThemeProvider>;
 }
 
