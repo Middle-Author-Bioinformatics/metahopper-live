@@ -66,6 +66,15 @@ body.mh-shared-rank #bin-rank-control,body.mh-shared-rank [data-shared-rank-cont
       target.classList.add('mh-search-target');
       target.scrollIntoView({block:'center', behavior:'smooth'});
     }
+    function showAllPathwayBins() {
+      // Older published reports re-enable this filter when Reset is clicked.
+      // Run after their target handler so those reports work without re-upload.
+      const hide = document.getElementById('pathway-hide-zero');
+      if (hide?.checked === true) {
+        hide.checked = false;
+        hide.dispatchEvent(new Event('change', { bubbles: true }));
+      }
+    }
     const requestAsset = (path, download) => new Promise((resolve, reject) => {
       const id = 'asset-' + (++serial);
       const timer = setTimeout(() => { pending.delete(id); reject(Error('Sample asset request timed out')); }, 180000);
@@ -92,7 +101,12 @@ body.mh-shared-rank #bin-rank-control,body.mh-shared-rank [data-shared-rank-cont
       if (event.source === parent && event.data?.channel === channel && event.data.type === 'set-theme') setTheme(event.data.theme);
     });
     addEventListener('DOMContentLoaded', () => {
+      showAllPathwayBins();
       document.addEventListener('click', async event => {
+        if (event.target?.closest?.('#pathway-reset')?.id === 'pathway-reset') {
+          showAllPathwayBins();
+          return;
+        }
         const anchor = event.target?.closest?.('a[data-sample-asset], a[download]');
         if (!anchor) return;
         const path = anchor.getAttribute('data-sample-asset') || anchor.getAttribute('href');
