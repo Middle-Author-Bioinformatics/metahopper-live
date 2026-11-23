@@ -2,9 +2,12 @@
 // Deliberately pair this CSP with a sandbox that omits allow-same-origin.
 import { reportTheme } from './report-theme.ts';
 import type { Theme } from './theme';
+import { assemblyContext, assemblyNote } from './assembly-context.ts';
 
 export function isolatedReport(html: string, channel: string, theme: Theme = 'light'): string {
   if (!/<head\b[^>]*>/i.test(html)) throw new Error('Expected a complete MetaHopper HTML report.');
+  const assembly = assemblyContext(html);
+  html = assemblyNote(html, assembly);
   const csp = `<meta http-equiv="Content-Security-Policy" content="default-src 'none'; script-src 'unsafe-inline'; style-src 'unsafe-inline'; img-src data: blob:; font-src data:; connect-src 'none'; object-src 'none'; base-uri 'none'; form-action 'none'">`;
   // Compact the viewer presentation, including reports already uploaded to S3.
   // Preserve report content and standalone source HTML.
@@ -15,10 +18,11 @@ body > .wrap > header > h1{font-size:1.3rem;line-height:1.25}
 body > .wrap > header > h1 + p.sub{display:none!important}
 #tabs.tabs{margin:10px 0;gap:5px}
 #tabs > .tab{padding:6px 11px;font-size:.84rem;line-height:1.35}
-#pane-bins > .card:first-child{padding:12px 14px}
-#pane-bins > .card:first-child > .row:first-child{margin-bottom:8px!important}
-#pane-bins > .card:first-child > p.note{margin:6px 0}
+#pane-bins > .card:first-of-type{padding:12px 14px}
+#pane-bins > .card:first-of-type > .row:first-child{margin-bottom:8px!important}
+#pane-bins > .card:first-of-type > p.note{margin:6px 0}
 #bin-table tr.mh-search-target td{background:var(--selection);box-shadow:inset 0 2px var(--acc),inset 0 -2px var(--acc)}
+.assembly-scope-note{margin:0 0 10px;color:var(--mut);font-size:.8rem;line-height:1.45}.assembly-scope-note strong{color:var(--ink)}
 body.mh-shared-rank #bin-rank-control,body.mh-shared-rank [data-shared-rank-control],body.mh-shared-rank .bin-figure-controls{display:none!important}
 #bin-search-help,#annotation-browser>.annotation-help:not([role="status"]),#pathway-browser>p.note:not([id]),#pathway-hits-card>p.note:not([id]){display:none!important}
 </style>`;
@@ -28,6 +32,19 @@ body.mh-shared-rank #bin-rank-control,body.mh-shared-rank [data-shared-rank-cont
     const channel = ${safeChannel};
     const pending = new Map(); let serial = 0;
     let lastFocus = '';
+    const assemblyLabel = ${JSON.stringify(assembly?.label ?? null)};
+    function labelAssemblyPlots() {
+      if (!assemblyLabel) return;
+      const total = document.getElementById('bin-partition-total');
+      if (total?.textContent && !total.textContent.startsWith(assemblyLabel + ' · ')) total.textContent = assemblyLabel + ' · ' + total.textContent;
+      const svg = document.getElementById('bin-partition-figure')?.querySelector?.('svg');
+      if (!svg) return;
+      const name = svg.getAttribute('aria-label');
+      if (name?.startsWith('Full assembly')) svg.setAttribute('aria-label', name.replace(/^Full assembly/, assemblyLabel));
+      svg.querySelectorAll(':scope > title, :scope > text').forEach(node => {
+        if (node.textContent) node.textContent = node.textContent.replace(/^Full assembly(?= to |$)/, assemblyLabel);
+      });
+    }
     function setTheme(value) {
       if (value !== 'light' && value !== 'dark') return;
       const root = document.documentElement;
@@ -101,6 +118,12 @@ body.mh-shared-rank #bin-rank-control,body.mh-shared-rank [data-shared-rank-cont
       if (event.source === parent && event.data?.channel === channel && event.data.type === 'set-theme') setTheme(event.data.theme);
     });
     addEventListener('DOMContentLoaded', () => {
+      labelAssemblyPlots();
+      if (assemblyLabel) {
+        document.addEventListener('metahopper:bins-filter', labelAssemblyPlots);
+        document.getElementById('rank-filter')?.addEventListener('change', labelAssemblyPlots);
+        document.getElementById('bin-search')?.addEventListener('input', labelAssemblyPlots);
+      }
       showAllPathwayBins();
       document.addEventListener('click', async event => {
         if (event.target?.closest?.('#pathway-reset')?.id === 'pathway-reset') {

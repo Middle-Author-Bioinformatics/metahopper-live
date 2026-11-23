@@ -81,6 +81,15 @@ python3 scripts/publish_reports.py \
 
 Publish completed sample outputs. The publisher respects the pipeline lock, validates sample ownership and hashes, and rejects assets that change during staging. New HTML is uploaded only after that sample's assets succeed. If a later sample fails, earlier completed publications remain available; retrying is safe and does not delete S3 objects.
 
+### Assembly size labels
+
+The dashboard adds a compact assembly-scope note to current and older reports
+using their embedded partition source. Final consolidated FASTAs are labeled
+**Retained assembly**, with removed host/other filtered contigs excluded. Initial
+FASTA sources and unknown sources are labeled separately. The note and partition
+labels appear after the web deployment without republishing existing reports;
+sequence metrics and underlying report data are preserved.
+
 ### Published names and excluded runs
 
 Keep analysis folders and their cached results in place when changing dashboard
