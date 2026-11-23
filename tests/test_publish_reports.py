@@ -6,6 +6,7 @@ import hashlib
 import gzip
 import json
 import os
+import re
 import subprocess
 from pathlib import Path
 import tempfile
@@ -115,6 +116,35 @@ class PublishTests(unittest.TestCase):
         manifest=json.loads((output/'asset_manifest.json').read_text())
         self.assertFalse(any('/annotation/' in key for key in manifest['files']))
         self.assertNotIn('Chromosomal replication initiator',(output/'metahopper_report.html').read_text())
+
+    def test_published_alias_keeps_real_annotations_graph_checksums_and_source_caches(self):
+        self.add_annotation()
+        watched = [self.report, self.root/'final/bins/genus/Test.fasta',
+                   self.root/'final/annotation/genus/Test/result.json',
+                   self.root/'final/annotation/genus/Test/bakta/annotation.faa']
+        original = {p: (p.read_bytes(), p.stat().st_mtime_ns) for p in watched}
+        output = publish.prepare_sample(self.report, self.stage, 'sample-bucket', 'reports/aphrophora/',
+                                        PIPELINE, published_name='Renamed')
+        self.assertEqual(output.name, 'Renamed')
+        manifest = json.loads((output/'asset_manifest.json').read_text())
+        self.assertEqual(manifest['sample'], 'Renamed')
+        self.assertEqual(manifest['prefix'], 'reports/aphrophora/Renamed/')
+        for logical, entry in manifest['files'].items():
+            self.assertEqual(entry['key'], f'reports/aphrophora/Renamed/assets/{entry["sha256"]}/{logical}')
+            copied = output/'assets'/entry['sha256']/logical
+            self.assertEqual(hashlib.sha256(copied.read_bytes()).hexdigest(), entry['sha256'])
+        html = (output/'metahopper_report.html').read_text()
+        self.assertIn('<h1>MetaHopper report — Renamed</h1>', html)
+        self.assertIn('Chromosomal replication initiator', html)
+        self.assertEqual(publish.taxonomy_index(html, 'Renamed', 'final')['sample'], 'Renamed')
+        self.assertEqual(json.loads((output/'taxonomy_index.json').read_text())['sample'], 'Renamed')
+        catalog = json.loads((self.root/'assembly_graphs.final.json').read_text())
+        self.assertEqual(catalog['run_name'], 'Sample')
+        payload = json.loads(re.search(r'var DATA = (.*?);\s*/\*', html, re.S)[1])
+        self.assertEqual(payload['runName'], 'Sample')
+        self.assertEqual(payload['assemblyGraphs']['run_name'], 'Sample')
+        for path, snapshot in original.items():
+            self.assertEqual((path.read_bytes(), path.stat().st_mtime_ns), snapshot)
 
     def test_upload_order_preserves_assets_before_html_and_explicit_project_prefix(self):
         commands=[]
