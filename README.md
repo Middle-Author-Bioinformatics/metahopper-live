@@ -81,6 +81,61 @@ python3 scripts/publish_reports.py \
 
 Publish completed sample outputs. The publisher respects the pipeline lock, validates sample ownership and hashes, and rejects assets that change during staging. New HTML is uploaded only after that sample's assets succeed. If a later sample fails, earlier completed publications remain available; retrying is safe and does not delete S3 objects.
 
+### Published names and excluded runs
+
+Keep analysis folders and their cached results in place when changing dashboard
+names. The publisher automatically reads `report_publication.json` from the
+`--source` directory when present. For example:
+
+```json
+{
+  "schema": "metahopper-publication-1",
+  "samples": {
+    "Legacy-v0": null,
+    "Sample": null,
+    "Sample-2": "Sample"
+  }
+}
+```
+
+`null` excludes a source folder from future publication. A string changes its
+published folder name, report title and taxonomy search identity. Unlisted runs
+keep their current names. In this example the old `Sample` source is explicitly
+excluded so `Sample-2` can replace its published report. Duplicate published
+names, unsafe names and invalid configurations fail before any uploads.
+
+Select a run by its **source folder name**:
+
+```bash
+python3 scripts/publish_reports.py \
+  --source "$HOME/Jagiellonian/Aphrophora" --sample Sample-2 \
+  --pipeline-dir "$HOME/bin/MetaHopper" \
+  --bucket YOUR_GENERATED_BUCKET_NAME --prefix reports/aphrophora/ \
+  --staging-dir "$HOME/Jagiellonian/Aphrophora/.publish-staging"
+```
+
+An explicit `--publication-config PATH` overrides automatic discovery. Bulk
+publication uses the same map. Source FASTAs, annotations, pathway outputs and
+cache records are unchanged. Internal source-run IDs remain provenance and keep
+graph ownership checks consistent. Assets are staged under the new sample prefix
+with their original content hashes; the manifest and ETag-bound search index use
+the new published name. The existing assets-before-HTML upload order is preserved.
+
+The map does not delete previously published reports. After the replacement logs
+`Published .../Sample/`, remove the two obsolete **HTML entry objects** to remove
+their tabs:
+
+```bash
+aws s3 rm s3://YOUR_GENERATED_BUCKET_NAME/reports/aphrophora/Legacy-v0/metahopper_report.html
+aws s3 rm s3://YOUR_GENERATED_BUCKET_NAME/reports/aphrophora/Sample-2/metahopper_report.html
+```
+
+These two operations require `s3:DeleteObject` for those exact keys. The publisher
+itself still requires no delete permission and performs no automatic deletion.
+Source analysis folders and old immutable assets remain available for recovery.
+The updated canonical report replaces the earlier canonical HTML after its assets
+have uploaded; no assembly, Bakta or pathway searches are rerun.
+
 ### Temporary storage and missing graphs
 
 Staging requires space for one sample's report assets, rather than the entire

@@ -79,5 +79,22 @@ class PathwayPublisherTests(unittest.TestCase):
         with self.assertRaisesRegex(ValueError,'Pathway outputs changed'):
             publish.prepare_sample(report,stage2,'sample-bucket','reports/aphrophora/',PIPELINE,skip_refresh=True)
 
+    def test_published_alias_retains_verified_pathways_and_source_protein_identifiers(self):
+        assembly=self.root/'final/assembly/consolidated_contigs.fasta'
+        assembly.parent.mkdir(parents=True);assembly.write_text('>A_contig\nATGAAATAA\n')
+        report=self.root/'metahopper_report.html';report.write_text('placeholder')
+        original=(self.output/'run_manifest.json').read_bytes()
+        stage=Path(self.tmp.name)/'stage';stage.mkdir()
+        output=publish.prepare_sample(report,stage,'sample-bucket','reports/aphrophora/',PIPELINE,published_name='Renamed')
+        html=(output/'metahopper_report.html').read_text()
+        sources,expected=publish.pathway_sources(html,self.root,'final')
+        self.assertEqual(len(sources),len(self.data['files']))
+        self.assertIn('MK*',html)
+        manifest=json.loads((output/'asset_manifest.json').read_text())
+        logical='final/pathways/genus/all_model_hits.csv'
+        self.assertEqual(manifest['files'][logical]['sha256'],expected[logical]['sha256'])
+        self.assertTrue(manifest['files'][logical]['key'].startswith('reports/aphrophora/Renamed/assets/'))
+        self.assertEqual((self.output/'run_manifest.json').read_bytes(),original)
+
 
 if __name__=='__main__':unittest.main()

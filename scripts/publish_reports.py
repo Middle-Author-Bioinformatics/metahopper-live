@@ -6,6 +6,7 @@ from collections import Counter
 import errno
 import gzip
 import hashlib
+from html import escape
 import json
 import math
 import os
@@ -18,6 +19,65 @@ import tempfile
 
 # This is the viewer's in-memory limit, not an upload or download size limit.
 MAX_BUFFERED_ASSET_BYTES = 512 * 1024 * 1024
+
+
+def sample_name(value):
+    if (not isinstance(value, str) or len(value) > 200
+            or not re.fullmatch(r'[A-Za-z0-9][A-Za-z0-9._-]*', value)):
+        raise ValueError('Invalid published sample name: ' + repr(value))
+    return value
+
+
+def publication_targets(reports, config=None):
+    """Resolve labels/exclusions before any upload; preserve source run folders."""
+    names = {}
+    if config is not None:
+        data = json.loads(config.read_text())
+        if (not isinstance(data, dict) or data.get('schema') != 'metahopper-publication-1'
+                or set(data) != {'schema', 'samples'} or not isinstance(data['samples'], dict)):
+            raise ValueError('Expected publication schema metahopper-publication-1 and a samples object')
+        names = data['samples']
+        for source, target in names.items():
+            sample_name(source)
+            if target is not None:
+                sample_name(target)
+        missing = {source for source, target in names.items() if target is not None} - {p.parent.name for p in reports}
+        if missing:
+            raise ValueError('Publication names refer to missing reports: ' + ', '.join(sorted(missing)))
+    targets, owners = {}, {}
+    for report in reports:
+        source = report.parent.name
+        target = names.get(source, source)
+        if target is None:
+            continue
+        if target in owners:
+            raise ValueError(f'Publication name collision: {owners[target]} and {source} both publish as {target}. '
+                             'Explicitly exclude the older source with null in the publication config.')
+        owners[target] = source
+        targets[source] = target
+    return targets
+
+
+def published_title(html, name):
+    """Change the displayed/published identity; internal run IDs stay provenance.
+
+    Source run names are retained in DATA and graph/pathway records so graph
+    ownership checks and scientific identifiers remain consistent.
+    """
+    title = escape('MetaHopper report — ' + sample_name(name))
+    html, titles = re.subn(r'(<title\b[^>]*>)[\s\S]*?(</title>)',
+                          lambda m: m[1] + title + m[2], html, count=1, flags=re.I)
+    html, headings = re.subn(r'(<header\b[^>]*>\s*<h1\b[^>]*>)[\s\S]*?(</h1>)',
+                            lambda m: m[1] + title + m[2], html, count=1, flags=re.I)
+    if titles != 1 or headings != 1:
+        raise ValueError('Cannot rename an unrecognized report title/header; regenerate the report first')
+    def taxonomy(match):
+        data = json.loads(match[2])
+        data['sample'] = name
+        payload = json.dumps(data, separators=(',', ':'), allow_nan=False).replace('<', '\\u003c').replace('&', '\\u0026')
+        return match[1] + payload + match[3]
+    return re.sub(r'(<script\b[^>]*\bid=["\']metahopper-taxonomy-data["\'][^>]*>)([\s\S]*?)(</script>)',
+                  taxonomy, html, count=1, flags=re.I)
 
 
 def staging_directory(value):
@@ -227,14 +287,15 @@ def idle_sample(root):
             fcntl.flock(handle, fcntl.LOCK_UN)
 
 
-def prepare_sample(report, stage, bucket, prefix, pipeline_dir, max_nodes=4000000, skip_refresh=False, max_links=10000000, pathways_rank='genus', pathways_dir=None):
+def prepare_sample(report, stage, bucket, prefix, pipeline_dir, max_nodes=4000000, skip_refresh=False, max_links=10000000, pathways_rank='genus', pathways_dir=None, *, published_name=None):
     with idle_sample(report.parent.resolve()):
-        return _prepare_sample(report, stage, bucket, prefix, pipeline_dir, max_nodes, skip_refresh, max_links, pathways_rank, pathways_dir)
+        return _prepare_sample(report, stage, bucket, prefix, pipeline_dir, max_nodes, skip_refresh, max_links, pathways_rank, pathways_dir, published_name=published_name)
 
 
-def _prepare_sample(report, stage, bucket, prefix, pipeline_dir, max_nodes=4000000, skip_refresh=False, max_links=10000000, pathways_rank='genus', pathways_dir=None):
+def _prepare_sample(report, stage, bucket, prefix, pipeline_dir, max_nodes=4000000, skip_refresh=False, max_links=10000000, pathways_rank='genus', pathways_dir=None, *, published_name=None):
     root = report.parent.resolve()
-    sample = report.parent.name
+    source_name = report.parent.name
+    sample = sample_name(published_name) if published_name is not None else source_name
     sample_prefix = prefix.rstrip('/') + '/' + sample + '/'
     destination = stage / sample
     destination.mkdir(parents=True)
@@ -341,8 +402,13 @@ def _prepare_sample(report, stage, bucket, prefix, pipeline_dir, max_nodes=40000
         if manifest['files'][published_logical].get('downloadOnly'):
             size = manifest['files'][published_logical]['size']
             print(f'{sample}: direct browser download ({size / (1024 * 1024):,.1f} MiB): {published_logical}', flush=True)
+    # Validate source ownership before changing any published label.
+    index = taxonomy_index(html, source_name, stage_name)
+    if sample != source_name:
+        html = published_title(html, sample)
+        if index is not None:
+            index['sample'] = sample
     (destination / report.name).write_text(embed_manifest(html, manifest))
-    index = taxonomy_index(html, sample, stage_name)
     if index is not None:
         (destination / 'taxonomy_index.json').write_text(json.dumps(index, separators=(',', ':'), allow_nan=False) + '\n')
     (destination / 'asset_manifest.json').write_text(json.dumps(manifest, indent=2) + '\n')
@@ -359,6 +425,8 @@ def main():
     parser.add_argument('--prefix', required=True,
                         help='Project folder, e.g. reports/aphrophora/ or reports/sample-reports/')
     parser.add_argument('--sample', action='append', help='Publish only this sample folder; may be repeated')
+    parser.add_argument('--publication-config', type=pathlib.Path,
+                        help='Published names/exclusions; defaults to SOURCE/report_publication.json when present')
     parser.add_argument('--pipeline-dir', type=pathlib.Path, default=pathlib.Path(__file__).resolve().parents[2] / 'MetaHopper')
     parser.add_argument('--graph-max-nodes', type=int, default=4000000,
                         help='Maximum segments per input GFA; large display catalogues retain complete two-link neighbourhoods')
@@ -385,11 +453,22 @@ def main():
     if not shutil.which('aws'):
         parser.error('AWS CLI (v1 or v2) must be installed and configured')
     reports = sorted(args.source.glob('*/metahopper_report.html'))
+    config = args.publication_config
+    if config is None and (args.source / 'report_publication.json').is_file():
+        config = args.source / 'report_publication.json'
+    try:
+        names = publication_targets(reports, config)
+    except (OSError, ValueError, TypeError) as exc:
+        parser.error(str(exc))
     if args.sample:
+        disabled = set(args.sample) & ({p.parent.name for p in reports} - set(names))
+        if disabled:
+            parser.error('Reports excluded by publication config: ' + ', '.join(sorted(disabled)))
         reports = [p for p in reports if p.parent.name in set(args.sample)]
         missing = set(args.sample) - {p.parent.name for p in reports}
         if missing:
             parser.error('No completed report for: ' + ', '.join(sorted(missing)))
+    reports = [p for p in reports if p.parent.name in names]
     if not reports:
         parser.error('No sample reports found')
     if any(not report.stat().st_size for report in reports):
@@ -404,10 +483,14 @@ def main():
         print(f'{len(reports)} reports selected; staging one sample at a time in {staging_parent}. '
               'Existing S3 objects will not be deleted.', flush=True)
         for report in reports:
-            current = report.parent.name
+            source_name = report.parent.name
+            current = names[source_name]
+            if current != source_name:
+                print(f'{source_name}: publishing as {current}; source run unchanged.', flush=True)
             with tempfile.TemporaryDirectory(prefix='metahopper-publish-', dir=staging_parent) as directory:
                 stage = pathlib.Path(directory)
-                prepare_sample(report, stage, args.bucket, args.prefix, args.pipeline_dir.resolve(), args.graph_max_nodes, args.skip_refresh, args.megahit_max_links, args.pathways_rank, args.pathways_dir)
+                renamed = dict(published_name=current) if current != source_name else {}
+                prepare_sample(report, stage, args.bucket, args.prefix, args.pipeline_dir.resolve(), args.graph_max_nodes, args.skip_refresh, args.megahit_max_links, args.pathways_rank, args.pathways_dir, **renamed)
                 # Assets precede this sample's HTML; a failed staging/upload must
                 # never point a new report at absent files. Hash-named assets can
                 # use size-only sync despite fresh local staging timestamps.
