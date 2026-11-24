@@ -348,6 +348,11 @@ def _prepare_sample(report, stage, bucket, prefix, pipeline_dir, max_nodes=40000
     if fasta is None:
         raise ValueError(f'No matching assembly FASTA in {root}')
     sources = {catalog.relative_to(root).as_posix(): catalog, fasta.relative_to(root).as_posix(): fasta}
+    # Only explicitly named support files from this sample enter the manifest.
+    for filename in ('run_info.json', 'full_run.log'):
+        path = root / 'report_support' / filename
+        if path.is_file():
+            sources[path.relative_to(root).as_posix()] = path
     for path in (base / 'bins').glob('*/*.fasta'):
         sources[path.relative_to(root).as_posix()] = path
     for item in graph_data.get('graphs', []):

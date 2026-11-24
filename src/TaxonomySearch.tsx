@@ -10,13 +10,15 @@ interface Props {
   rank: Rank;
   onRankChange: (rank: Rank) => void;
   sampleControls?: ReactNode;
+  resetKey?: number;
 }
 type Entry = { version: string; index: TaxonomyIndex };
 const PAGE_SIZE = 30;
 const numeric = (value: number | null, digits = 0) => value === null ? '—' : value.toLocaleString(undefined, { maximumFractionDigits: digits });
 
-export default function TaxonomySearch({ project, reports, onSelect, rank, onRankChange, sampleControls }: Props) {
+export default function TaxonomySearch({ project, reports, onSelect, rank, onRankChange, sampleControls, resetKey }: Props) {
   const [query, setQuery] = useState('');
+  useEffect(() => { setQuery(''); }, [resetKey]);
   const [indexes, setIndexes] = useState(new Map<string, Entry>());
   const [failed, setFailed] = useState(new Set<string>());
   const [loading, setLoading] = useState(false);

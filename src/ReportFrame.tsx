@@ -12,8 +12,10 @@ interface Props {
   binFocus?: BinFocus;
   rank: Rank;
   theme: Theme;
+  onResetFilters?: () => void;
+  onViewRestored?: () => void;
 }
-export default function ReportFrame({ report, active, removed, onEdited, binFocus, rank, theme }: Props) {
+export default function ReportFrame({ report, active, removed, onEdited, binFocus, rank, theme, onResetFilters, onViewRestored }: Props) {
   const frame = useRef<HTMLIFrameElement>(null);
   const channel = useRef(crypto.randomUUID());
   const themeRef = useRef(theme);
@@ -29,6 +31,8 @@ export default function ReportFrame({ report, active, removed, onEdited, binFocu
     const requests = new Map<string, AbortController>();
     const handler = (event: MessageEvent) => {
       if (event.source !== frame.current?.contentWindow || event.data?.channel !== channel.current) return;
+      if (active && event.data.type === 'reset-report-filters') onResetFilters?.();
+      if (active && event.data.type === 'report-view-restored') onViewRestored?.();
       if (event.data.type === 'edited' && typeof event.data.value === 'boolean') {
         setEdited(event.data.value);
         onEdited(report.path, event.data.value);
@@ -54,7 +58,7 @@ export default function ReportFrame({ report, active, removed, onEdited, binFocu
     };
     window.addEventListener('message', handler);
     return () => { window.removeEventListener('message', handler); requests.forEach((request) => request.abort()); };
-  }, [report.path, onEdited, loaded?.manifest]);
+  }, [report.path, onEdited, loaded?.manifest, onResetFilters, onViewRestored, active]);
 
   useEffect(() => {
     if (!active || removed || edited || loaded?.version === report.version) { setBusy(false); return; }

@@ -55,6 +55,25 @@ class PublishTests(unittest.TestCase):
         link=self.root/'final/bins/genus/Outside.fasta';link.symlink_to(outside)
         with self.assertRaisesRegex(ValueError,'outside this run'):
             publish.stage_asset(link,self.root,'final/bins/genus/Outside.fasta',self.stage,'reports/phoridae/Sample/')
+
+    def test_run_settings_and_complete_logs_are_sample_scoped_immutable_downloads(self):
+        write(self.root/'run.json', json.dumps(dict(arguments={'threads':24,'checkm':True})))
+        write(self.root/'pipeline.log', 'Completed pipeline timeline\n')
+        full = 'All tool output\n' * 10000 + 'LAST LINE\n'
+        write(self.root/'logs/annotation.log', full)
+        output=publish.prepare_sample(self.report,self.stage,'sample-bucket','reports/aphrophora/',PIPELINE,published_name='Renamed')
+        manifest=json.loads((output/'asset_manifest.json').read_text())
+        staged={}
+        for logical in ('report_support/run_info.json','report_support/full_run.log'):
+            entry=manifest['files'][logical]
+            self.assertEqual(entry['key'],f'reports/aphrophora/Renamed/assets/{entry["sha256"]}/{logical}')
+            content=(output/'assets'/entry['sha256']/logical).read_bytes()
+            self.assertEqual(hashlib.sha256(content).hexdigest(),entry['sha256'])
+            staged[logical]=content
+        info=json.loads(staged['report_support/run_info.json'])
+        self.assertEqual(info['source_run'],'Sample')
+        self.assertEqual(info['settings']['run.json']['data']['arguments']['threads'],24)
+        self.assertIn(full.encode(),staged['report_support/full_run.log'])
     def test_active_pipeline_is_not_published(self):
         import fcntl
         lock=write(self.root/'pipeline.lock','')
