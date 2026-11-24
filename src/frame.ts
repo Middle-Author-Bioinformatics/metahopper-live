@@ -3,16 +3,19 @@
 import { reportTheme } from './report-theme.ts';
 import type { Theme } from './theme';
 import { assemblyContext, assemblyNote } from './assembly-context.ts';
+import { reportControlsCSS, reportControlsJS } from './report-controls.ts';
+import { upgradeBinarenaView } from './report-upgrade.ts';
 
 export function isolatedReport(html: string, channel: string, theme: Theme = 'light'): string {
   if (!/<head\b[^>]*>/i.test(html)) throw new Error('Expected a complete MetaHopper HTML report.');
   const assembly = assemblyContext(html);
-  html = assemblyNote(html, assembly);
+  html = upgradeBinarenaView(assemblyNote(html, assembly));
   const csp = `<meta http-equiv="Content-Security-Policy" content="default-src 'none'; script-src 'unsafe-inline'; style-src 'unsafe-inline'; img-src data: blob:; font-src data:; connect-src 'none'; object-src 'none'; base-uri 'none'; form-action 'none'">`;
   // Compact the viewer presentation, including reports already uploaded to S3.
   // Preserve report content and standalone source HTML.
   const presentation = `<style data-metahopper-viewer>
 ${reportTheme}
+${reportControlsCSS}
 body > .wrap{padding-top:12px}
 body > .wrap > header > h1{font-size:1.3rem;line-height:1.25}
 body > .wrap > header > h1 + p.sub{display:none!important}
@@ -118,6 +121,8 @@ body.mh-shared-rank #bin-rank-control,body.mh-shared-rank [data-shared-rank-cont
       if (event.source === parent && event.data?.channel === channel && event.data.type === 'set-theme') setTheme(event.data.theme);
     });
     addEventListener('DOMContentLoaded', () => {
+      document.addEventListener('metahopper:reset-view', () => parent.postMessage({channel, type:'reset-report-filters'}, '*'));
+      document.addEventListener('metahopper:view-restored', () => parent.postMessage({channel, type:'report-view-restored'}, '*'));
       labelAssemblyPlots();
       if (assemblyLabel) {
         document.addEventListener('metahopper:bins-filter', labelAssemblyPlots);
@@ -158,6 +163,7 @@ body.mh-shared-rank #bin-rank-control,body.mh-shared-rank [data-shared-rank-cont
       }
     });
   })();
+  ${reportControlsJS}
   </script>`;
   return html.replace(/<head\b[^>]*>/i, (head) => head + csp + presentation + bridge);
 }

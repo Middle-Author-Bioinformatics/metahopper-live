@@ -209,11 +209,44 @@ The larger planthopper and MetaHopper wordmark are centered in a three-column he
 
 Sample search, sorting, cross-sample taxon search and the shared rank selector occupy one toolbar above the sample tabs. Taxon results expand beneath those controls while a query is active. Annotation uses smaller underline-style **Genes & proteins** and **Pathways** sub-tabs. Instructional paragraphs are removed from the regenerated report while counts, biological statuses and actual errors remain.
 
-Pathway bins start unfiltered. Hiding zero-coverage bins is an explicit choice; Reset filters restores them. The viewer also corrects older published reports whose Reset handler re-enables that checkbox, running after the original button handler and refreshing the existing table. This compatibility fix takes effect on a fresh report frame after the frontend deployment, without republishing sample files or changing manual assignments.
+Pathway bins start unfiltered, including zero-coverage bins. The shared Reset filters restores the full overview. The viewer also corrects older published reports whose Reset handler hides zero-coverage bins, running after the original button handler and refreshing the existing table. This compatibility fix takes effect on a fresh report frame after the frontend deployment, without republishing sample files or changing manual assignments.
 
 The header’s Light/Dark switch updates the dashboard and all cached report frames without reloading reports or discarding manual assignments. It starts with the system preference and saves an explicit choice in local browser storage. System changes continue to apply until a choice is saved; blocked storage falls back to session behavior. Theme messages require the report’s exact parent window and channel. CSS palettes cover tables, dialogs, feature/pseudogene labels and SVG plots; regenerated reports also use the palette for BinaRena canvas labels.
 
 Pull the updated MetaHopper generator on TheBelly and run the existing publisher commands for each project to refresh reports from saved outputs. This embeds recorded missing-component evidence in the HMM table and removes report instructions; it does not rerun Bakta, PathwayGenie, assembly or DIAMOND. Existing HMM results distinguish **No hits**, **No accepted hit**, candidates, unmeasured steps and failed/stale runs. Unmeasured or failed results never become missing genes. The viewer header, toolbar, sub-tab hierarchy and theme switch ship with the frontend deployment; the new evidence rows require regenerated/re-published HTML.
+
+## Report navigation and run downloads
+
+The report toolbar provides **Back** and a prominent **Reset filters**. Back
+restores the previous filtered view, including section, contig selection and
+scroll; Reset clears report filters, temporary selection and the outer dashboard
+searches while preserving taxonomic rank and manual bin assignments. Rank changes
+start a new history. A narrow compatibility hook exposes only temporary selection
+in recognized older BinaRena reports; unfamiliar report scripts remain unchanged.
+
+The contiguity plot shows bin identity, size, N50, contig count, GC and available
+CheckM scores on hover or keyboard focus. Points open their bin in the table.
+Duplicate counts, partition source captions, feature category shortcuts, the local
+Bakta JSON importer, hypothetical/non-hypothetical summary columns, the pathway
+zero-coverage toggle/legend, and technical run-parameter displays are hidden.
+Scientific data, warnings and missing-component evidence remain available.
+Single-page pagers disappear; filtered gene/protein exports are grouped under
+**Download features**. These presentation changes apply when an existing report
+opens in a freshly deployed viewer; a scientific pipeline rerun is unnecessary.
+
+**Run info** downloads `report_support/run_info.json`; **Full log** downloads
+`report_support/full_run.log`. The updated MetaHopper generator creates them from
+saved settings/status records and full saved execution logs, including tool logs
+and command history. They cannot reconstruct missing/deleted logs or unsaved
+terminal output. The publisher includes only these explicitly named files from
+the current sample, using immutable checksummed assets and the existing signed
+download bridge. Project access, manifests and sample boundaries are unchanged.
+The log link is omitted when the generator found no saved execution logs.
+
+To enable the new downloads, update the generator and this publisher on TheBelly,
+then republish the desired projects with normal refresh enabled. `--skip-refresh`
+cannot create missing support files. Older reports show these links only when
+their asset manifest contains the files; the viewer does not offer broken links.
 
 
 ## Local development

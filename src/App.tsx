@@ -30,6 +30,9 @@ export function Dashboard({ email, signOut, project, projects, onProjectChange }
   const [refreshing, setRefreshing] = useState(false);
   const [binFocus, setBinFocus] = useState<{ path: string; target: BinFocus }>();
   const [rank, setRank] = useState<Rank>('phylum');
+  const [filterReset, setFilterReset] = useState(0);
+  const resetReportFilters = useCallback(() => { setQuery(''); setBinFocus(undefined); setFilterReset(value => value + 1); }, []);
+  const restoreReportView = useCallback(() => { setBinFocus(undefined); }, []);
   const mounted = useRef(false);
   const abort = useRef<AbortController | undefined>(undefined);
   const tabs = useRef<HTMLDivElement>(null);
@@ -156,7 +159,7 @@ export function Dashboard({ email, signOut, project, projects, onProjectChange }
         ? <select className="project-picker" aria-label="Project" value={project.id} onChange={(event) => switchProject(event.target.value)}>{projects.map((item) => <option key={item.id} value={item.id}>{item.name}</option>)}</select>
         : <span className="project-name">{project.name}</span>}
     </Header>
-    <TaxonomySearch project={project} reports={reports} onSelect={selectTaxon} rank={rank} onRankChange={changeRank} sampleControls={<>
+    <TaxonomySearch project={project} reports={reports} onSelect={selectTaxon} rank={rank} onRankChange={changeRank} resetKey={filterReset} sampleControls={<>
       <label className="sample-query"><span>Samples <span className="count">{reports.length}</span></span><input type="search" aria-label="Find a sample" placeholder="Find a sample…" value={query} onChange={(e) => setQuery(e.target.value)} /></label>
       <label className="sample-sort">Sort<select aria-label="Sort samples" value={sort} onChange={(e) => setSort(e.target.value)}><option value="name">Sample name</option><option value="updated">Recently updated</option></select></label>
     </>} />
@@ -165,7 +168,7 @@ export function Dashboard({ email, signOut, project, projects, onProjectChange }
     {query && !visible.length && <div className="notice">No sample matches “{query}”. <button onClick={() => setQuery('')}>Clear search</button></div>}
     <main className="workspace">
       {!selected && <div className="empty"><div className="empty-icon">M</div><h2>{error ? 'Reports unavailable' : checked ? 'Waiting for reports' : 'Finding your samples…'}</h2><p>{error ? 'Use Retry above to try again.' : checked ? 'Completed reports will appear here automatically.' : 'Connecting to your project.'}</p></div>}
-      {cache.map((cached) => <ReportFrame key={cached.path} report={byPath.get(cached.path) ?? cached} active={selected === cached.path} removed={!byPath.has(cached.path)} onEdited={onEdited} rank={rank} theme={theme} binFocus={binFocus?.path === cached.path ? binFocus.target : undefined} />)}
+      {cache.map((cached) => <ReportFrame key={cached.path} report={byPath.get(cached.path) ?? cached} active={selected === cached.path} removed={!byPath.has(cached.path)} onEdited={onEdited} rank={rank} theme={theme} onResetFilters={resetReportFilters} onViewRestored={restoreReportView} binFocus={binFocus?.path === cached.path ? binFocus.target : undefined} />)}
     </main>
   </div>;
 }
